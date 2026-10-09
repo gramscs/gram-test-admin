@@ -1,258 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Admin Login – Gram SCS</title>
-  <link href="{{ url_for('static', filename='vendor/space-grotesk/font.css') }}" rel="stylesheet">
-  <link rel="icon" href="{{ url_for('static', filename='images/logo.png') }}" />
-  <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    :root {
-      --bg-1: #081318;
-      --bg-2: #10262e;
-      --ink: #eaf4ef;
-      --muted: #b6c7c0;
-      --highlight: #89d136;
-      --highlight-dark: #6ab522;
-      --danger: #d14f52;
-      --glass: rgba(255, 255, 255, 0.07);
-      --border: rgba(255, 255, 255, 0.14);
-    }
-
-    html,
-    body {
-      min-height: 100vh;
-      font-family: 'Space Grotesk', sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 12% 10%, rgba(137, 209, 54, 0.15) 0%, transparent 42%),
-        radial-gradient(circle at 90% 85%, rgba(255, 166, 60, 0.14) 0%, transparent 42%),
-        linear-gradient(140deg, var(--bg-1), var(--bg-2));
-    }
-
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-    }
-
-    /* ── back link ── */
-    .back-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      text-decoration: none;
-      font-size: 0.875rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      color: var(--muted);
-      margin-bottom: 2rem;
-      transition: color 0.2s;
-    }
-
-    .back-link:hover {
-      color: var(--ink);
-    }
-
-    .back-link svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    /* ── card ── */
-    .login-shell {
-      width: 100%;
-      max-width: 440px;
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      background: var(--glass);
-      backdrop-filter: blur(12px);
-      box-shadow: 0 28px 55px rgba(0, 0, 0, 0.30);
-      overflow: hidden;
-    }
-
-    .login-header {
-      text-align: center;
-      padding: 2.2rem 2rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .login-header img {
-      height: 52px;
-      margin-bottom: 1rem;
-      filter: drop-shadow(0 2px 8px rgba(137, 209, 54, 0.25));
-    }
-
-    .login-header h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.15;
-      margin-bottom: 0.3rem;
-    }
-
-    .login-header p {
-      font-size: 0.88rem;
-      color: var(--muted);
-      letter-spacing: 0.02em;
-    }
-
-    /* ── form body ── */
-    .login-body {
-      padding: 1.8rem 2rem 2.2rem;
-    }
-
-    /* ── error alert ── */
-    .login-alert {
-      margin-bottom: 1.2rem;
-      border: 1px solid rgba(209, 79, 82, 0.45);
-      background: rgba(209, 79, 82, 0.12);
-      color: #ffd9d9;
-      border-radius: 10px;
-      padding: 0.75rem 1rem;
-      font-size: 0.9rem;
-      display: flex;
-      align-items: flex-start;
-      gap: 0.5rem;
-    }
-
-    /* ── form controls ── */
-    .field {
-      margin-bottom: 1.2rem;
-    }
-
-    .field label {
-      display: block;
-      font-size: 0.85rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 0.45rem;
-    }
-
-    .field input {
-      width: 100%;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.06);
-      border-radius: 12px;
-      color: var(--ink);
-      min-height: 50px;
-      padding: 0.78rem 1rem;
-      font-size: 0.98rem;
-      font-family: inherit;
-      letter-spacing: 0.02em;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-    }
-
-    .field input::placeholder {
-      color: rgba(234, 244, 239, 0.45);
-    }
-
-    .field input:focus {
-      border-color: rgba(137, 209, 54, 0.9);
-      box-shadow: 0 0 0 3px rgba(137, 209, 54, 0.22);
-      background: rgba(255, 255, 255, 0.10);
-    }
-
-    /* ── submit button ── */
-    .login-btn {
-      display: block;
-      width: 100%;
-      margin-top: 1.6rem;
-      border: none;
-      min-height: 52px;
-      border-radius: 12px;
-      padding: 0.8rem 1.2rem;
-      font-size: 1rem;
-      font-weight: 700;
-      font-family: inherit;
-      letter-spacing: 0.03em;
-      cursor: pointer;
-      color: #14200f;
-      background: linear-gradient(140deg, var(--highlight), #c5ee89);
-      box-shadow: 0 10px 24px rgba(137, 209, 54, 0.28);
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
-
-    .login-btn:hover,
-    .login-btn:focus {
-      transform: translateY(-2px);
-      box-shadow: 0 14px 30px rgba(137, 209, 54, 0.38);
-      outline: none;
-    }
-
-    .login-btn:active {
-      transform: translateY(0);
-    }
-  </style>
+  {% include 'admin/_theme_head.html' %}
 </head>
-
-<body>
-  <a href="{{ url_for('index') }}" class="back-link">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-      <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
-    </svg>
-    Admin Home
-  </a>
-
-  <div class="login-shell">
-    <div class="login-header">
-      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Gram SCS Logo" />
-      <h1>Admin Login</h1>
-      <p>Gram SCS IT Department</p>
-    </div>
-
-    <div class="login-body">
-      {% if error %}
-      <div class="login-alert" role="alert">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;flex-shrink:0;margin-top:1px">
-          <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
-        </svg>
-        {{ error }}
+<body class="login-page">
+  <main class="login-layout">
+    <div class="login-topline"><a href="{{ url_for('index') }}"><i class="fa fa-arrow-left me-2" aria-hidden="true"></i>Admin Home</a>{% include 'admin/_theme_toggle.html' %}</div>
+    <div class="surface-panel login-shell">
+      <div class="login-header">
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Gram SCS Logo" />
+        <span class="page-eyebrow">OPERATIONS WORKSPACE</span>
+        <h1>Admin Login</h1><p>Welcome back. Sign in to keep things moving.</p>
       </div>
-      {% endif %}
-
-      <form method="POST" action="{{ url_for('admin.login') }}" autocomplete="off" novalidate>
-        <div class="field">
-          <label for="username">Username</label>
-          <input
-            type="text"
-            id="username"
-            name="username"
-            required
-            autofocus
-            autocomplete="username"
-            placeholder="Enter username"
-          />
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            required
-            autocomplete="current-password"
-            placeholder="Enter password"
-          />
-        </div>
-        <button type="submit" class="login-btn">Sign In</button>
+      {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+      <form method="POST" action="{{ url_for('admin.login') }}" novalidate>
+        <div class="mb-3"><label for="username" class="form-label">Username</label><input type="text" id="username" name="username" class="form-control" required autofocus autocomplete="username" placeholder="Enter username" /></div>
+        <div class="mb-3"><label for="password" class="form-label">Password</label><input type="password" id="password" name="password" class="form-control" required autocomplete="current-password" placeholder="Enter password" /></div>
+        <button type="submit" class="btn btn-primary login-btn">Sign In <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></button>
       </form>
+      <p class="login-footnote">Gram SCS · Shipments. Labels. Customer enquiries.</p>
     </div>
-  </div>
+  </main>
 </body>
-
 </html>

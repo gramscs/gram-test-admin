@@ -20,7 +20,29 @@ logger = logging.getLogger(__name__)
 @admin_bp.route("/admin/dashboard", methods=["GET"])
 @require_admin
 def dashboard():
-    return render_template("admin/dashboard.html")
+    try:
+        status_counts = dict(
+            db.session.query(Consignment.status, func.count(Consignment.id))
+            .group_by(Consignment.status)
+            .all()
+        )
+        metrics = {
+            "total": sum(status_counts.values()),
+            "in_transit": status_counts.get("In Transit", 0),
+            "delivered": status_counts.get("Delivered", 0),
+            "leads": Lead.query.count(),
+        }
+        recent_shipments = Consignment.query.order_by(Consignment.id.desc()).limit(5).all()
+        return render_template("admin/dashboard.html", metrics=metrics, recent_shipments=recent_shipments)
+    except (OperationalError, DatabaseError):
+        db.session.rollback()
+        logger.exception("Database error loading dashboard overview")
+        return render_template(
+            "admin/dashboard.html",
+            metrics={},
+            recent_shipments=[],
+            error="The database overview is unavailable right now. You can still open your workspace tools.",
+        )
 
 
 def _to_json_safe(value):

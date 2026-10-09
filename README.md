@@ -61,13 +61,15 @@ the same SQLite database to display these records. On Windows PowerShell, set
 
 ## What is included
 
-- The original login, dashboard, sidebar, and admin page designs.
+- A shared green/charcoal design, Space Grotesk typography, and responsive navigation.
+- Dashboard totals from your database, recent shipments, and shortcuts to each tool.
+- Light and dark themes across every admin screen, including login.
 - Shipment creation, editing, deletion, searching, sorting, and pagination.
 - Delivery-proof image upload, viewing, downloading, and removal.
 - Excel import, Excel export, import-template download, and the original PDF button.
 - Viewing customer enquiries and removing enquiries with blank phone numbers.
 - JSON backup download for shipments, enquiries, and newsletter subscribers.
-- Local Bootstrap, icon fonts, login fonts, scripts, and logo. The interface
+- Local Bootstrap, icon fonts, interface fonts, scripts, and logo. The interface
   does not need a CDN or the public website to load.
 
 ## Where the code is
@@ -78,11 +80,11 @@ app/
   admin/                      Original admin routes and business logic
   models.py                   Shipment, enquiry, and subscriber database tables
   db_maintenance.py           Optional PostgreSQL schema repair helper
-  templates/admin/            Admin screen HTML and page styling
+  templates/admin/            Admin screen HTML and shared theme components
   static/js/consignments.js    Shipment screen behavior
-  static/js/admin/             Server requests, pending edits, input checks
-  static/vendor/              Bundled Bootstrap and login font
-  static/css/                 Icon styling
+  static/js/admin/             Requests, pending edits, input checks, theme preference
+  static/vendor/              Bundled Bootstrap and Space Grotesk font
+  static/css/                 Shared themes, consignment layout, and icons
   static/fonts/               Icon fonts
   static/images/logo.png      Original branding
 tests/                        Standalone application tests
@@ -91,6 +93,22 @@ wsgi.py                       Production server entry point
 .env.example                  Configuration template
 requirements.txt              Python dependencies
 ```
+
+## Appearance
+
+Dashboard previews with local demo data: [Light mode](docs/screenshots/dashboard-light.png)
+· [Dark mode](docs/screenshots/dashboard-dark.png).
+
+Use the theme toggle in the top bar (sun/moon icon on phones) to switch between
+light and dark mode. Your choice is saved in this browser and applies to every
+admin screen, including login; it also syncs between open tabs. Before you make
+a choice, the app follows your device theme. The toggle still works if browser
+storage is blocked, although the preference cannot be remembered after reload.
+
+The dashboard shows saved consignment totals, exact **In Transit** and
+**Delivered** status counts, customer lead totals, and the five most recently
+added shipments. These are database values, not sample analytics. On small
+screens, use the menu button beside the logo to open navigation.
 
 ## Database and delivery-proof files
 

@@ -1,63 +1,64 @@
 {% extends "admin/base.html" %}
-
 {% block title %}Admin Dashboard – Gram SCS{% endblock %}
 {% set active_page = 'dashboard' %}
 {% block topbar_title %}Dashboard{% endblock %}
-
 {% block content %}
-    <h4 class="mb-1 fw-bold">Welcome back!</h4>
-    <p class="text-muted mb-4">Gram SCS Admin Panel &ndash; use the sidebar to navigate.</p>
-    <div class="row g-3 mb-4">
-      <!-- Consignments card -->
-      <div class="col-md-4">
-        <div class="card stat-card p-3">
-          <div class="d-flex align-items-center gap-3">
-            <div class="icon-box bg-primary bg-opacity-10 text-primary">
-              <i class="fa fa-truck"></i>
-            </div>
-            <div>
-              <div class="text-muted small">Consignment Sheet</div>
-              <div class="fw-semibold">Manage &amp; export consignments</div>
-            </div>
-          </div>
-          <a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-sm btn-primary mt-3">
-            Open &rarr;
-          </a>
-        </div>
-      </div>
-
-      <!-- Leads card -->
-      <div class="col-md-4">
-        <div class="card stat-card p-3">
-          <div class="d-flex align-items-center gap-3">
-            <div class="icon-box bg-success bg-opacity-10 text-success">
-              <i class="fa fa-users"></i>
-            </div>
-            <div>
-              <div class="text-muted small">Leads Panel</div>
-              <div class="fw-semibold">View customer enquiries</div>
-            </div>
-          </div>
-          <a href="{{ url_for('admin.leads_panel') }}" class="btn btn-sm btn-success mt-3">
-            Open &rarr;
-          </a>
-        </div>
-      </div>
+<section class="hero-panel">
+  <div>
+    <span class="page-eyebrow">YOUR OPERATIONS, AT A GLANCE</span>
+    <h1>Welcome back!<br />Let's keep things moving.</h1>
+    <p>Your shipments, customer enquiries and shipping labels. Everything you need for the day, in one place.</p>
+    <a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-primary">Manage consignments <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></a>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <svg viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="120" cy="90" r="82" stroke="currentColor" stroke-opacity=".1" /><circle cx="120" cy="90" r="58" stroke="currentColor" stroke-opacity=".1" />
+      <path d="M42 121C90 121 64 54 119 54S158 122 205 122" stroke="currentColor" stroke-opacity=".5" stroke-width="2" stroke-dasharray="5 6" />
+      <rect x="80" y="65" width="78" height="66" rx="13" fill="currentColor" fill-opacity=".08" />
+      <path d="M96 86L120 74L144 86V112L120 125L96 112V86ZM96 86L120 99L144 86M120 99V125M109 80L133 93" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
+      <circle cx="40" cy="121" r="8" fill="currentColor" /><circle cx="205" cy="122" r="8" fill="currentColor" />
+      <circle cx="179" cy="43" r="19" fill="currentColor" fill-opacity=".12" /><path d="M171 43L177 49L187 37" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  </div>
+</section>
+{% if error %}<div class="alert alert-warning" role="alert">{{ error }}</div>{% endif %}
+<div class="row g-3">
+  {% for key, label, icon, caption in [('total', 'Total consignments', 'cubes', 'All saved shipments'), ('in_transit', 'In transit', 'truck', 'Status: In Transit'), ('delivered', 'Delivered', 'check-circle', 'Completed deliveries'), ('leads', 'Customer leads', 'users', 'Saved customer enquiries')] %}
+  <div class="col-6 col-xl-3">
+    <div class="surface-panel metric-card">
+      <div class="metric-top"><span>{{ label }}</span><span class="metric-icon"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span></div>
+      <div class="metric-value" data-metric="{{ key }}">{{ metrics.get(key, '—') }}</div>
+      <div class="metric-caption">{{ caption }}</div>
     </div>
-
-    <div class="card stat-card p-3 mb-2">
-      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-        <div>
-          <div class="text-muted small">Database Backup</div>
-          <div class="fw-semibold">Generate and download a one-shot JSON backup</div>
-        </div>
-        <a href="{{ url_for('admin.generate_backup') }}" class="btn btn-sm btn-dark">
-          Download Backup
-        </a>
-      </div>
-    </div>
-
-    <p class="text-muted small mt-4">
-      More sections will be added here as the dashboard grows. &mdash; Gram SCS IT Dept.
-    </p>
+  </div>
+  {% endfor %}
+</div>
+<div class="section-heading"><h2>Your workspace</h2><span class="text-muted small">Pick up where you left off</span></div>
+<div class="row g-3 mb-4">
+  {% for endpoint, icon, tone, title, description, action in [('consignments_panel', 'truck', 'green', 'Consignment Sheet', 'Add shipments, update their details and keep your records organized.', 'Open consignments'), ('labels_panel', 'barcode', 'blue', 'B2B Labels', 'Turn saved shipments into print-ready labels, one for every piece.', 'Create shipping labels'), ('leads_panel', 'users', 'orange', 'Leads Panel', 'Find contact details and review enquiries from your customers.', 'View customer leads')] %}
+  <div class="col-md-4"><a href="{{ url_for('admin.' ~ endpoint) }}" class="surface-panel workspace-card">
+    <span class="workspace-icon tone-{{ tone }}"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span>
+    <h3>{{ title }}</h3><p>{{ description }}</p><span class="workspace-cta">{{ action }}<i class="fa fa-arrow-right" aria-hidden="true"></i></span>
+  </a></div>
+  {% endfor %}
+</div>
+<section class="surface-panel overflow-hidden">
+  <div class="panel-header"><h2>Recently added consignments</h2><a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-outline-secondary btn-sm">View all</a></div>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead><tr><th scope="col">Identifier</th><th scope="col">Route</th><th scope="col">Pieces</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+        {% for row in recent_shipments %}
+        <tr><td><strong>{{ row.consignment_number }}</strong><span class="d-block text-muted small">{{ row.identifier_type or 'LRN' }}</span></td>
+          <td>{{ row.pickup_tag or row.pickup_pincode or '—' }} <i class="fa fa-long-arrow-right mx-2 text-muted" aria-hidden="true"></i> {{ row.drop_tag or row.drop_pincode or '—' }}</td>
+          <td>{{ row.pieces or 1 }}</td><td><span class="status-badge {{ 'tone-green' if row.status == 'Delivered' else 'tone-blue' if row.status in ['In Transit', 'Out for Delivery'] else 'tone-orange' }}">{{ row.status or 'No status' }}</span></td></tr>
+        {% else %}<tr><td colspan="4" class="text-center text-muted py-4">{{ 'Recent shipments are unavailable.' if error else 'Your next shipment starts here. Add a consignment to get going.' }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="surface-panel backup-panel">
+  <div class="d-flex align-items-center gap-3"><span class="metric-icon"><i class="fa fa-database" aria-hidden="true"></i></span><div><h2>Database Backup</h2><p>Download your consignments, leads and subscribers as a JSON file.</p></div></div>
+  <a href="{{ url_for('admin.generate_backup') }}" class="btn btn-outline-secondary"><i class="fa fa-download me-2" aria-hidden="true"></i>Download Backup</a>
+</section>
 {% endblock %}

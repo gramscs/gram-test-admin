@@ -16,6 +16,7 @@
 <section class="consignment-page" aria-label="Consignment sheet">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
     <div>
+      <span class="page-eyebrow">SHIPMENT MANAGEMENT</span>
       <h4 class="mb-1 fw-bold">Internal Consignment Sheet</h4>
       <p class="text-muted small mb-0">Add or edit shipment details, then click Save All to save your changes.</p>
     </div>
@@ -41,7 +42,7 @@
   {% endfor %}
   <div id="status-msg" class="alert d-none" role="alert"></div>
 
-  <div class="bg-white border rounded overflow-hidden">
+  <div class="surface-panel overflow-hidden">
     <div class="d-flex flex-wrap align-items-center gap-2 p-3 border-bottom">
       <label for="search-input" class="visually-hidden">Search consignments</label>
       <input type="search" id="search-input" class="form-control form-control-sm sheet-search" placeholder="Search identifier, status, tag, address or pincode…" />

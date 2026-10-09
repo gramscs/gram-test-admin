@@ -57,6 +57,7 @@ def test_all_browser_assets_are_bundled(client):
         "vendor/space-grotesk/font.css", "vendor/space-grotesk/space-grotesk-latin-400-normal.woff2",
         "css/font-awesome.min.css", "fonts/fontawesome-webfont.woff2", "images/logo.png",
         "js/consignments.js", "js/admin/api.js", "js/admin/state.js", "js/admin/validation.js",
+        "js/admin/theme.js", "css/admin-theme.css", "css/admin-consignments.css",
     ]:
         response = client.get("/static/" + filename)
         assert response.status_code == 200, filename

@@ -3,18 +3,18 @@
 {% block title %}B2B Labels – Gram SCS{% endblock %}
 {% block topbar_title %}B2B Labels{% endblock %}
 {% block content %}
-<h4>B2B Shipping Labels</h4>
-<p class="text-muted">Select saved shipments to download 4×6-inch labels. Each piece gets its own label. Weight is in kg and volume in m³. Print at actual size (100%). Maximum 500 labels per download.</p>
+<div class="page-heading"><span class="page-eyebrow">READY TO SHIP</span><h1>B2B Shipping Labels</h1>
+<p class="text-muted">Select saved shipments to download 4×6-inch labels. Each piece gets its own label. Weight is in kg and volume in m³. Print at actual size (100%). Maximum 500 labels per download.</p></div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-<form method="get" class="d-flex gap-2 mb-3">
+<form method="get" class="d-flex gap-2 mb-3 surface-panel p-3">
   <label class="visually-hidden" for="label-search">Search identifier</label>
   <input id="label-search" name="search" value="{{ search }}" class="form-control" placeholder="Search LRN, Order ID, or AWB" />
   <button class="btn btn-outline-primary">Search</button>
 </form>
 <form method="post" action="{{ url_for('admin.labels_generate', page=page, search=search) }}">
-  <div class="table-responsive bg-white border rounded mb-3">
+  <div class="table-responsive surface-panel mb-3">
     <table class="table mb-0">
-      <thead><tr><th><input id="select-all-labels" type="checkbox" aria-label="Select all shipments on this page" /></th><th>Type</th><th>Identifier</th><th>Pieces</th><th>Ship From</th><th>Ship To</th><th>Weight (kg)</th><th>Volume (m³)</th></tr></thead>
+      <thead class="table-light"><tr><th><input id="select-all-labels" type="checkbox" aria-label="Select all shipments on this page" /></th><th>Type</th><th>Identifier</th><th>Pieces</th><th>Ship From</th><th>Ship To</th><th>Weight (kg)</th><th>Volume (m³)</th></tr></thead>
       <tbody>{% for row in rows %}<tr>
         <td><input type="checkbox" name="consignment_ids" value="{{ row.id }}" aria-label="Select {{ row.consignment_number }}" /></td>
         <td>{{ row.identifier_type or 'LRN' }}</td><td>{{ row.consignment_number }}</td><td>{{ row.pieces or 1 }}</td>
