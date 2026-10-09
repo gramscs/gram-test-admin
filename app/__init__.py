@@ -18,7 +18,14 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 def create_app(test_config=None):
-    load_dotenv(PROJECT_ROOT / ".env", override=False)
+    env_file = PROJECT_ROOT / ".env"
+    example_file = PROJECT_ROOT / ".env.example"
+    if env_file.exists():
+        load_dotenv(env_file, override=False)
+        if not os.getenv("DATABASE_URL", "").strip() and example_file.exists():
+            load_dotenv(example_file, override=False)
+    elif example_file.exists():
+        load_dotenv(example_file, override=False)
     overrides = dict(test_config or {})
     instance_path = Path(overrides.pop("INSTANCE_PATH", PROJECT_ROOT / "instance")).resolve()
     instance_path.mkdir(parents=True, exist_ok=True)
@@ -32,6 +39,12 @@ def create_app(test_config=None):
         raise RuntimeError("Set ADMIN_PASSWORD_HASH before starting in production.")
     if database_url.startswith("postgres://"):
         database_url = "postgresql://" + database_url[len("postgres://"):]
+    placeholder_markers = ("[YOUR_PASSWORD]", "[YOUR-PASSWORD]", "POOLER_HOST", "your_password")
+    if database_url and any(marker.lower() in database_url.lower() for marker in placeholder_markers):
+        if production:
+            raise RuntimeError("Replace the password placeholder in DATABASE_URL before starting in production.")
+        app.logger.warning("DATABASE_URL still contains placeholder values; falling back to the local SQLite database for development.")
+        database_url = ""
     if production and not (database_url or overrides.get("SQLALCHEMY_DATABASE_URI")):
         raise RuntimeError("Set DATABASE_URL before starting in production.")
     database_url = database_url or f"sqlite:///{instance_path / 'admin.db'}"
