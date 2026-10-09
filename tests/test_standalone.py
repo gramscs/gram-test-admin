@@ -140,7 +140,7 @@ def test_removed_leads_preserves_legacy_data_in_backup(admin_client, app):
     for path in ('/admin/leads', '/admin/leads/bulk', '/admin/leads/email-preview', '/admin/leads/email-draft', '/admin/leads/reject-empty-phone'):
         assert admin_client.post(path, json={}).status_code == 404
     assert admin_client.put('/admin/leads/1', json={}).status_code == 404
-    payload = admin_client.get("/admin/generate-backup").get_json()
+    payload = admin_client.get("/admin/generate-backup?format=json").get_json()
     assert payload["metadata"]["table_counts"]["leads"] == 1
     assert payload["leads"][0]["name"] == "Legacy enquiry"
     assert payload["newsletter_subscribers"][0]["email"] == "subscriber@example.com"

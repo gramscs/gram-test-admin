@@ -36,7 +36,7 @@ def test_company_presets_defaults_edit_and_shipment_snapshots(admin_client):
     assert admin_client.put(f"/admin/companies/{master['id']}", json=master).status_code == 200
     assert admin_client.post('/admin/consignments/save', json={'rows': [{'consignment_number': 'BADCLIENT', 'company_id': 999}]}).status_code == 400
     assert admin_client.get('/admin/consignments/list').get_json()['total'] == 1
-    backup = admin_client.get('/admin/generate-backup').get_json()
+    backup = admin_client.get('/admin/generate-backup?format=json').get_json()
     assert backup['companies'][0]['name'] == master['name']
     assert backup['company_locations'][0]['address'] == 'Changed master address'
 

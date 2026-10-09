@@ -3,16 +3,17 @@
 import io
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from flask import jsonify, render_template, send_file, session
+from flask import jsonify, render_template, request, send_file, session
 from sqlalchemy import func
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Company, CompanyLocation, Consignment, Lead, NewsletterSubscriber, db
+from app.models import Consignment, db
 
 logger = logging.getLogger(__name__)
 
@@ -45,66 +46,30 @@ def dashboard():
         )
 
 
-def _to_json_safe(value):
-    if value is None:
-        return None
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, datetime):
-        return value.isoformat()
-    isoformat = getattr(value, "isoformat", None)
-    if callable(isoformat):
-        return isoformat()
-    return str(value)
-
-
-def _serialize_model_row(model_row, excluded_fields=None):
-    excluded_fields = set(excluded_fields or [])
-    payload = {}
-    for column in model_row.__table__.columns:
-        if column.name in excluded_fields:
-            continue
-        payload[column.name] = _to_json_safe(getattr(model_row, column.name))
-    return payload
-
-
 @admin_bp.route("/admin/generate-backup", methods=["GET"])
 @limiter.limit("3 per minute")
 @require_admin
 def generate_backup():
-    admin_user = session.get("admin_username") or "unknown"
-    started_at = datetime.now(UTC).isoformat()
-
+    from app.admin.backup import build_complete_backup, collect_admin_data
+    output_format = request.args.get('format', 'zip')
+    if output_format not in ('zip', 'json'):
+        return jsonify(success=False, message='Choose ZIP or JSON backup format.'), 400
+    admin_user = session.get('admin_username') or 'unknown'
     try:
-        table_specs = [
-            ("consignments", Consignment, {"eta_debug_json"}),
-            ("leads", Lead, set()),
-            ("newsletter_subscribers", NewsletterSubscriber, set()),
-            ("companies", Company, set()),
-            ("company_locations", CompanyLocation, set()),
-        ]
-
-        backup_payload = {}
-        table_counts = {}
-        for table_name, model_class, excluded_fields in table_specs:
-            rows = model_class.query.order_by(model_class.id.asc()).all()
-            backup_payload[table_name] = [
-                _serialize_model_row(row, excluded_fields=excluded_fields) for row in rows
-            ]
-            table_counts[table_name] = len(rows)
-
-        backup_payload["metadata"] = {
-            "generated_at": started_at,
-            "generated_by": admin_user,
-            "table_counts": table_counts,
-            "total_rows": sum(table_counts.values()),
-        }
-
-        buffer = io.BytesIO(json.dumps(backup_payload, ensure_ascii=True, indent=2).encode("utf-8"))
-        buffer.seek(0)
-
-        filename = f"backup_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.json"
-        return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/json")
-    except Exception as exc:
-        logger.error("Admin backup generation failed for %s: %s", admin_user, exc, exc_info=True)
-        return jsonify({"success": False, "message": "Failed to generate backup."}), 500
+        payload = collect_admin_data(admin_user)
+        stamp = datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y%m%d_%H%M%S_IST')
+        if output_format == 'json':
+            buffer = io.BytesIO(json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8'))
+            response = send_file(buffer, as_attachment=True, download_name=f'backup_{stamp}.json', mimetype='application/json')
+        else:
+            buffer, summary = build_complete_backup(payload)
+            suffix = '_incomplete' if summary['status'] == 'incomplete' else ''
+            response = send_file(buffer, as_attachment=True, download_name=f'backup_{stamp}{suffix}.zip', mimetype='application/zip')
+            response.headers['X-Backup-Status'] = summary['status']
+        response.call_on_close(buffer.close)
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except Exception:
+        logger.exception('Admin backup generation failed')
+        return jsonify(success=False, message='Failed to generate backup. Try again or download data-only JSON.'), 500

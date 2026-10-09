@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 import warnings
+from contextlib import contextmanager
 
 from flask import current_app, jsonify, request, send_file
 from PIL import Image
@@ -23,6 +24,31 @@ MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 DOCUMENTS = {'pod': ('pod_image', 'pod_original_name'), 'invoice': ('invoice_file', 'invoice_original_name')}
 IMAGE_TYPES = {'JPEG': ('.jpg', 'image/jpeg'), 'PNG': ('.png', 'image/png'), 'WEBP': ('.webp', 'image/webp')}
 EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.pdf'}
+
+
+@contextmanager
+def open_stored_document(value):
+    """Read private storage without fetching external URLs or escaping uploads."""
+    if not isinstance(value, str) or not value:
+        raise ValueError('Invalid document reference.')
+    if value.lower().startswith(('http://', 'https://', 'data:')):
+        raise ValueError('External document references cannot be fetched.')
+    if value.startswith('supabase:'):
+        from app.admin.consignment_controller import _download_supabase_pod_file
+        content, name = _download_supabase_pod_file(value)
+        with io.BytesIO(content) as source:
+            yield source, name
+    else:
+        root = Path(current_app.instance_path, 'uploads').resolve()
+        path = (root / value).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError('Invalid document path.')
+        if not path.exists():
+            raise FileNotFoundError('Document file missing.')
+        if not path.is_file():
+            raise ValueError('Document reference is not a regular file.')
+        with path.open('rb') as source:
+            yield source, path.name
 
 
 def _check_pdf_tree(root):
@@ -196,17 +222,8 @@ def consignment_document(consignment_id, kind):
     if not value:
         return _response_error('No document found.', 404)
     try:
-        if value.startswith('supabase:'):
-            from app.admin.consignment_controller import _download_supabase_pod_file
-            content, storage_name = _download_supabase_pod_file(value)
-        else:
-            root = Path(current_app.instance_path, 'uploads').resolve()
-            path = (root / value).resolve()
-            if not path.is_relative_to(root):
-                return _response_error('Invalid document path.')
-            if not path.is_file():
-                return _response_error('Document file missing.', 404)
-            content, storage_name = path.read_bytes(), path.name
+        with open_stored_document(value) as (source, storage_name):
+            content = source.read()
         extension = Path(storage_name).suffix.lower()
         mime = {'.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp'}.get(extension, 'application/octet-stream')
         preview = request.args.get('preview') == '1' and mime.startswith('image/')
@@ -218,6 +235,8 @@ def consignment_document(consignment_id, kind):
         response.headers['Cache-Control'] = 'private, no-store'
         response.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
         return response
+    except FileNotFoundError:
+        return _response_error('Document file missing.', 404)
     except ValueError:
         return _response_error('This document cannot be previewed. Download it instead.')
     except Exception:

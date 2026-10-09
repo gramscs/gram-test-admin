@@ -83,7 +83,8 @@ the same SQLite database to display these records. On Windows PowerShell, set
 - Excel import, Excel export, import-template download, and the original PDF button.
 - Client company masters with multiple pickup/drop presets and editable shipment snapshots.
 - B2B piece labels with optional Code 128 barcodes and PDF preview.
-- JSON backup for shipments, companies, saved locations, and preserved legacy data.
+- Complete ZIP backup of all admin tables and uploaded files, with ordered
+  consignment folders, Excel/JSON data, checksums, and a missing-file report.
 - Local Bootstrap, icon fonts, interface fonts, scripts, and logo. The interface
   does not need a CDN or the public website to load.
 
@@ -138,7 +139,7 @@ database connection in `.env`. PostgreSQL connections use
 
 This admin app is dedicated to shipment tracking. Leads pages, editing routes,
 and email tools have been removed. Existing enquiry/subscriber records remain
-in the database and legacy JSON backup so the change does not discard data.
+in the database and complete backup so the change does not discard data.
 For shared Supabase shipment-document storage, configure `SUPABASE_URL`,
 `SUPABASE_KEY`, and `SUPABASE_BUCKET`. If the website stores proofs on its
 local disk, a shared database alone does not share those files: copy/mount
@@ -269,8 +270,9 @@ failed-save recovery, Excel import/export, labels, backups, startup, and persist
 - The original PDF export currently produces a PDF with the title
   “Consignments Export”; it does not print shipment rows. Excel export includes
   records.
-- JSON backups contain database records and POD/invoice references, not the
-  document files themselves. No backup-restore interface is included.
+- Complete backups include database records and uploaded files; the optional
+  data-only JSON export contains records and file references. No backup-restore
+  interface is included.
 
 The public website link on the login screen now points to this application's
 home route. The admin business logic, models, and JavaScript were copied from
@@ -295,6 +297,43 @@ preventing new selections. Use **Include archived → Restore** to reactivate a
 client. Editing an archived company also lets you mark it active again. Excel
 exports include `company_id` and `client_company`; the import template accepts
 an optional `company_id` from a master in this database.
+
+## Complete admin backup
+
+Choose **Complete backup** in the sidebar or **Download Backup ZIP** on the
+dashboard. The ZIP includes every row and column from every application-owned
+table: consignments, client companies (including archived clients), saved
+pickup/drop locations, and preserved legacy enquiries/subscribers. The backup
+is read-only; it does not change or delete records or uploads.
+
+Inside the ZIP:
+
+- `data.json`: all admin database records, with each shipment's backup order,
+  document path, and retrieval status.
+- `admin-data.xlsx`: a sheet for each table, plus document and inventory reports.
+  JSON is the authoritative full-data copy; Excel is for browsing the records.
+- `documents/000001_<consignment-number>_id-<id>/`: that shipment's POD and invoice
+  files. Numeric prefixes follow the consignment data/Excel order (database ID
+  ascending), so repeated original filenames cannot overwrite one another.
+- `other_uploads/`: all discovered uploaded files that no longer have a record
+  link, including local legacy uploads and unlinked admin Supabase uploads.
+- `document_report.json` and `README.txt`: included/missing/unavailable files,
+  upload-listing errors, original references, sizes, and SHA-256 checksums.
+
+Local inventory covers `instance/uploads/`. Supabase inventory covers the
+`consignments/` namespace used by the admin uploader in configured/referenced
+buckets, plus every file directly referenced by shipment records. It does not
+export unrelated website buckets/tables or environment credentials.
+
+Missing files or failed storage listings make the filename end in
+`_incomplete.zip`. All readable data/files are still included; check the report
+before relying on that backup. Live edits to uploads during export can cause
+retrieval issues. Files are copied exactly rather than re-encoded. Large
+archives spill to temporary disk instead of holding all file bytes in memory.
+
+**Download data only (JSON)** on the dashboard retains a faster records-only
+option (`/admin/generate-backup?format=json`). The default backup URL downloads
+the complete ZIP. Neither format includes an automatic restore interface.
 
 ## POD and invoice documents
 
