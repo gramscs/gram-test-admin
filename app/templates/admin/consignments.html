@@ -1,0 +1,288 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Consignment Sheet – Gram SCS{% endblock %}
+{% set active_page = 'consignments' %}
+{% block topbar_title %}Consignments{% endblock %}
+
+{% block head %}
+<style>
+  #sheet-table td, #sheet-table th {
+    vertical-align: middle;
+  }
+  .sort-header {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .sort-header:hover {
+    background-color: #f0f0f0;
+  }
+  .sort-icon {
+    margin-left: 4px;
+    font-size: 0.8em;
+    opacity: 0.6;
+  }
+  .sort-icon.active {
+    opacity: 1;
+    color: #0d6efd;
+  }
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .pagination-info {
+    font-size: 0.9em;
+    color: #666;
+  }
+  .pagination-buttons {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .pagination-buttons .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85em;
+  }
+  .page-number {
+    padding: 0.25rem 0.5rem;
+    min-width: 2rem;
+    text-align: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h4 class="mb-0 fw-bold">Internal Consignment Sheet</h4>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('admin.consignments_import_template_excel') }}" class="btn btn-outline-secondary btn-sm">Download Import Template</a>
+      <form action="{{ url_for('admin.consignments_import_excel') }}" method="POST" enctype="multipart/form-data" class="d-flex gap-2">
+        <input name="file" type="file" accept=".xlsx" class="form-control form-control-sm" required />
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Import Excel</button>
+      </form>
+      <a href="{{ url_for('admin.consignments_export_excel') }}" class="btn btn-outline-dark btn-sm">Export Excel</a>
+      <a href="{{ url_for('admin.consignments_export_pdf') }}" class="btn btn-outline-dark btn-sm">Export PDF</a>
+      <button id="add-row-btn" type="button" class="btn btn-outline-primary btn-sm">Add Row</button>
+      <button id="save-btn" type="button" class="btn btn-success btn-sm">Save All</button>
+      <input id="archive-date-input" type="date" class="form-control form-control-sm" style="max-width: 180px;" title="Archive delivered consignments before this date" />
+      <button id="archive-delivered-btn" type="button" class="btn btn-warning btn-sm">Archive Delivered</button>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-danger" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div id="status-msg" class="alert d-none" role="alert"></div>
+
+  <!-- Search and Filter Controls -->
+  <div class="bg-white border rounded mb-3 p-3">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label for="search-input" class="form-label">Search</label>
+        <input 
+          type="text" 
+          id="search-input" 
+          class="form-control form-control-sm" 
+          placeholder="Search by consignment #, status, tag, address, or pincode..."
+        />
+      </div>
+      <div class="col-md-3">
+        <label for="per-page-select" class="form-label">Rows per page</label>
+        <select id="per-page-select" class="form-select form-select-sm">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label>&nbsp;</label>
+        <button id="clear-filters-btn" type="button" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="fa fa-times me-1"></i>Clear Filters
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive bg-white border rounded">
+    <table class="table table-sm table-bordered align-middle mb-0" id="sheet-table">
+      <thead class="table-light">
+        <tr>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="consignment_number">
+            Consignment # <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 150px;" class="sort-header" data-sort-column="status">
+            Status <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="pickup_tag">
+            Pickup Tag <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 120px;" class="sort-header" data-sort-column="drop_pincode">
+            Drop Pin <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 120px;" class="sort-header" data-sort-column="pickup_date">
+            Pickup Date <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="drop_date">
+            Drop Estimated <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 120px; text-align: center;">POD</th>
+          <th style="width: 60px; text-align: center;">Edit</th>
+          <th style="width: 60px; text-align: center;">Delete</th>
+        </tr>
+      </thead>
+      <tbody
+        id="sheet-body"
+        data-existing-rows="{{ consignments | tojson | forceescape }}"
+        data-save-url="{{ url_for('admin.consignments_save') }}"
+        data-list-url="{{ url_for('admin.consignments_list_api') }}"
+        data-archive-url="{{ url_for('admin.consignments_archive') }}"></tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  <div class="pagination-controls">
+    <div class="pagination-info">
+      Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-count">0</span>
+    </div>
+    <div class="pagination-buttons">
+      <button id="prev-page-btn" type="button" class="btn btn-outline-secondary btn-sm">
+        <i class="fa fa-chevron-left"></i> Prev
+      </button>
+      <div id="page-numbers-container"></div>
+      <button id="next-page-btn" type="button" class="btn btn-outline-secondary btn-sm">
+        Next <i class="fa fa-chevron-right"></i>
+      </button>
+    </div>
+    <div id="loading-spinner" class="d-none">
+      <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+      Loading...
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal fade" id="editConsignmentModal" tabindex="-1" aria-labelledby="editConsignmentLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editConsignmentLabel">Edit Consignment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Group 1: Consignment Number -->
+          <div class="mb-4">
+            <label class="form-label fw-bold">Consignment #</label>
+            <input type="text" class="form-control" id="modal-consignment-number" maxlength="16" />
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-bold" for="modal-status">Status</label>
+            <select class="form-select" id="modal-status">
+              <option value="">Select status</option>
+              <option value="Pickup Scheduled">Pickup Scheduled</option>
+              <option value="In Transit">In Transit</option>
+              <option value="Out for Delivery">Out for Delivery</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+          </div>
+
+          <!-- Group 2: Pickup and Drop Details -->
+          <div class="row">
+            <!-- Group 2a: Pickup Details -->
+            <div class="col-md-6">
+              <h6 class="fw-bold mb-3">Pickup Details</h6>
+              <div class="mb-3">
+                <label for="modal-pickup-address" class="form-label">Pickup Address</label>
+                <textarea class="form-control" id="modal-pickup-address" rows="3" placeholder="Enter pickup address"></textarea>
+              </div>
+              <div class="mb-3">
+                <label for="modal-pickup-pincode" class="form-label">Pickup Pincode</label>
+                <input type="text" class="form-control" id="modal-pickup-pincode" maxlength="6" placeholder="Enter 6-digit pincode" />
+              </div>
+              <div class="mb-3">
+                <label for="modal-pickup-tag" class="form-label">Pickup Tag</label>
+                <input type="text" class="form-control" id="modal-pickup-tag" placeholder="Enter pickup tag" />
+              </div>
+              <div class="mb-3">
+                <label for="modal-pickup-date" class="form-label">Pickup Date</label>
+                <input type="text" class="form-control" id="modal-pickup-date" placeholder="Enter pickup date" />
+              </div>
+            </div>
+
+            <!-- Group 2b: Drop Details -->
+            <div class="col-md-6">
+              <h6 class="fw-bold mb-3">Drop Details</h6>
+              <div class="mb-3">
+                <label for="modal-drop-address" class="form-label">Drop Address</label>
+                <textarea class="form-control" id="modal-drop-address" rows="3" placeholder="Enter drop address"></textarea>
+              </div>
+              <div class="mb-3">
+                <label for="modal-drop-pincode" class="form-label">Drop Pincode</label>
+                <input type="text" class="form-control" id="modal-drop-pincode" maxlength="6" placeholder="Enter 6-digit pincode" />
+              </div>
+              <div class="mb-3">
+                <label for="modal-drop-tag" class="form-label">Drop Tag</label>
+                <input type="text" class="form-control" id="modal-drop-tag" placeholder="Enter drop tag" />
+              </div>
+              <div class="mb-3">
+                <label for="modal-drop-date" class="form-label">Drop Date</label>
+                <input type="text" class="form-control" id="modal-drop-date" placeholder="Enter drop date" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr />
+        <!-- Group 4: POD upload / preview -->
+        <div class="mb-3">
+          <label class="form-label fw-bold">Proof of Delivery (POD)</label>
+          <div class="mb-2" id="modal-pod-preview-container">
+            <em class="text-muted">No POD uploaded.</em>
+          </div>
+          <div class="d-flex flex-column flex-sm-row gap-2 align-items-sm-center">
+            <input type="file" id="modal-pod-file" accept="image/*" class="form-control form-control-sm" />
+            <button type="button" class="btn btn-outline-danger btn-sm" id="modal-pod-remove">Remove POD</button>
+            <button type="button" id="modal-pod-view" class="btn btn-outline-secondary btn-sm" style="display:none;">View POD</button>
+          </div>
+        </div>
+
+        <!-- Group 3: Action Buttons -->
+        <div class="modal-footer justify-content-end">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-save-btn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POD Viewer Modal -->
+  <div class="modal fade" id="podViewerModal" tabindex="-1" aria-labelledby="podViewerLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="podViewerLabel">Proof of Delivery</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="pod-viewer-content" style="min-height:300px;">
+          <!-- injected image -->
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin/state.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin/validation.js') }}"></script>
+<script src="{{ url_for('static', filename='js/consignments.js') }}"></script>
+{% endblock %}
