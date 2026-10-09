@@ -37,6 +37,28 @@ password, generate a hash and put it in `ADMIN_PASSWORD_HASH` in `.env`:
 python -c "from getpass import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass('New admin password: ')))"
 ```
 
+## Add dummy data locally
+
+With your virtual environment activated, run from this repository:
+
+```bash
+DATABASE_URL=sqlite:///instance/admin.db python -m flask --app wsgi:app seed-demo
+```
+
+This adds **25 sample shipments**, **5 customer enquiries**, and **3 newsletter
+subscribers**. The shipments include all four delivery statuses, addresses,
+PIN codes, and dates. The enquiries appear in the Leads panel; subscribers
+appear in the JSON backup.
+
+Refresh the admin pages after running it. Existing records are preserved,
+and running the command again does not duplicate the demo records. The command
+only works in local SQLite development and does not seed Supabase.
+
+The command explicitly targets `instance/admin.db`. Your running app must use
+the same SQLite database to display these records. On Windows PowerShell, set
+`$env:DATABASE_URL = 'sqlite:///instance/admin.db'` first, then run
+`python -m flask --app wsgi:app seed-demo`.
+
 ## What is included
 
 - The original login, dashboard, sidebar, and admin page designs.

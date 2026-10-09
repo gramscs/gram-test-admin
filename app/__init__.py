@@ -81,6 +81,8 @@ def create_app(test_config=None):
 
     from app.admin import admin_bp
     app.register_blueprint(admin_bp)
+    from app.seed_data import seed_demo
+    app.cli.add_command(seed_demo)
 
     @app.get("/")
     def index():
