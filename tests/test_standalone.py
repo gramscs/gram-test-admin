@@ -210,7 +210,20 @@ def test_supabase_preserves_certificate_verification_settings(app, monkeypatch, 
         db.engine.dispose()
 
 
+def test_supabase_falls_back_to_sqlite_when_placeholder_is_left_in_local_dev(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLASK_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.example:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    application = create_app({"INSTANCE_PATH": str(tmp_path / "placeholder-instance")})
+    assert application.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///")
+    assert application.config["SQLALCHEMY_DATABASE_URI"].endswith("admin.db")
+    with application.app_context():
+        db.engine.dispose()
+
+
 def test_supabase_rejects_unfilled_password_placeholder(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "test-key")
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "test-hash")
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.example:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
     with pytest.raises(RuntimeError, match="password placeholder"):
         create_app({"INSTANCE_PATH": str(tmp_path / "placeholder-instance")})
