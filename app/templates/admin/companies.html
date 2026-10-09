@@ -1,0 +1,48 @@
+{% extends 'admin/base.html' %}
+{% set active_page = 'companies' %}
+{% block title %}Companies – Gram SCS{% endblock %}
+{% block topbar_title %}Companies{% endblock %}
+{% block content %}
+<div class="page-heading d-flex flex-wrap justify-content-between align-items-start gap-3">
+  <div><span class="page-eyebrow">CLIENT MASTER</span><h1>Companies</h1><p>Save client details and regular locations once. Use them as editable presets for every new shipment.</p></div>
+  <button type="button" class="btn btn-primary" id="add-company-btn"><i class="fa fa-plus me-2" aria-hidden="true"></i>Add Company</button>
+</div>
+<div id="companies-error" class="alert alert-danger d-none" role="alert"></div>
+<form method="get" class="surface-panel p-3 d-flex flex-wrap align-items-center gap-3 mb-3">
+  <label for="company-search" class="visually-hidden">Search companies</label><input id="company-search" name="search" value="{{ search }}" class="form-control flex-grow-1" style="flex-basis:260px;width:auto;" placeholder="Search company name or address" />
+  <label class="d-flex align-items-center gap-2 small"><input type="checkbox" name="archived" value="1" {% if archived %}checked{% endif %} />Include archived</label>
+  <button class="btn btn-outline-primary">Search</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.companies_panel') }}">Reset</a>
+</form>
+<div class="surface-panel table-responsive">
+  <table class="table mb-0"><thead><tr><th scope="col">Company</th><th scope="col">Pickup locations</th><th scope="col">Drop locations</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+  <tbody>{% for company in companies %}<tr data-company="{{ company | tojson | forceescape }}">
+    <td><strong>{{ company.name }}</strong><span class="d-block text-muted small preserve-lines">{{ company.address or 'No registered address' }}</span><span class="d-block text-muted small">{{ company.email }}{% if company.email and company.phone %} · {% endif %}{{ company.phone }}</span></td>
+    {% for kind in ['pickup', 'drop'] %}<td>{% for location in company.locations if location.kind == kind %}<div class="small mb-1">{{ location.label }}{% if location.is_default %}<span class="status-badge tone-green ms-1">Default</span>{% endif %}<span class="d-block text-muted">{{ location.pincode }}</span></div>{% else %}<span class="text-muted small">No saved locations</span>{% endfor %}</td>{% endfor %}
+    <td><span class="status-badge {{ 'tone-green' if company.active else 'tone-orange' }}">{{ 'Active' if company.active else 'Archived' }}</span></td>
+    <td><div class="d-flex gap-2"><button type="button" class="btn btn-outline-primary btn-sm edit-company">Edit</button>{% if company.active %}<button type="button" class="btn btn-outline-danger btn-sm archive-company">Archive</button>{% else %}<button type="button" class="btn btn-outline-secondary btn-sm restore-company">Restore</button>{% endif %}</div></td>
+  </tr>{% else %}<tr><td colspan="5" class="empty-panel"><i class="fa fa-building-o" aria-hidden="true"></i><strong>No companies found</strong><span>Add your first client master to start using shipment presets.</span></td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="list-pagination"><span>{{ total }} companies · Page {{ page }}</span><div class="d-flex gap-2">{% if page > 1 %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.companies_panel', page=page-1, search=search, archived='1' if archived else '') }}">Previous</a>{% endif %}{% if page * 25 < total %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.companies_panel', page=page+1, search=search, archived='1' if archived else '') }}">Next</a>{% endif %}</div></div>
+<div class="modal fade" id="companyModal" tabindex="-1" aria-labelledby="company-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="company-modal-title">Add Company</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div id="company-form-error" class="alert alert-danger d-none" role="alert"></div>
+      <form id="company-form"><div class="row g-3 mb-4">
+        <div class="col-12"><label for="company-name" class="form-label">Company name *</label><input id="company-name" name="name" class="form-control" required maxlength="200" /></div>
+        <div class="col-12"><label for="company-address" class="form-label">Registered address</label><textarea id="company-address" name="address" class="form-control" rows="2" maxlength="5000"></textarea></div>
+        <div class="col-sm-6"><label for="company-email" class="form-label">Contact email</label><input id="company-email" name="email" type="email" class="form-control" maxlength="120" /></div>
+        <div class="col-sm-6"><label for="company-phone" class="form-label">Contact phone</label><input id="company-phone" name="phone" class="form-control" maxlength="30" /></div>
+        <div class="col-12"><label class="d-flex align-items-center gap-2"><input id="company-active" type="checkbox" checked />Active client</label><p class="small text-muted mt-2 mb-0">Archiving stops new selections and preserves existing shipment links.</p></div>
+      </div>
+      {% for kind, title in [('pickup', 'Pickup'), ('drop', 'Drop')] %}
+      <fieldset class="mb-4"><legend class="fs-6 fw-bold">{{ title }} locations</legend><div id="company-{{ kind }}-locations" class="location-list"></div><button type="button" class="btn btn-outline-secondary btn-sm add-location" data-kind="{{ kind }}"><i class="fa fa-plus me-1" aria-hidden="true"></i>Add {{ kind }} location</button></fieldset>
+      {% endfor %}
+      <p class="small text-muted mb-0">Master changes apply when presets are selected again. Addresses already saved on shipments stay unchanged.</p>
+      </form>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" form="company-form" class="btn btn-primary" id="company-save-btn">Save Company</button></div>
+  </div></div>
+</div>
+<template id="location-template"><div class="location-editor surface-panel p-3 mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><label class="d-flex align-items-center gap-2 small"><input type="checkbox" class="location-default" />Default for new shipments</label><button type="button" class="btn btn-outline-danger btn-sm remove-location" aria-label="Remove this saved location"><i class="fa fa-times" aria-hidden="true"></i></button></div><div class="row g-2"><div class="col-sm-8"><label class="form-label w-100">Location name *<input class="form-control location-label mt-1" required maxlength="100" placeholder="e.g. Delhi warehouse" /></label></div><div class="col-sm-4"><label class="form-label w-100">Pincode<input class="form-control location-pincode mt-1" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" /></label></div><div class="col-12"><label class="form-label w-100">Address *<textarea class="form-control location-address mt-1" required maxlength="5000" rows="2"></textarea></label></div></div></div></template>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/admin/ui.js') }}"></script><script src="{{ url_for('static', filename='js/admin/companies.js') }}"></script>{% endblock %}

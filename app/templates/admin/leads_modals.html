@@ -1,0 +1,23 @@
+<div class="modal fade" id="leadModal" tabindex="-1" aria-labelledby="lead-modal-title" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header"><h2 class="modal-title fs-5" id="lead-modal-title">Add Enquiry</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+<div class="modal-body"><div id="lead-form-error" class="alert alert-danger d-none" role="alert"></div><form id="lead-form"><div class="row g-3">
+{% for field, label, type, maximum, required in [('name', 'Contact name', 'text', 100, true), ('email', 'Contact email', 'email', 120, true), ('phone', 'Phone', 'text', 30, false), ('company_name', 'Company', 'text', 200, false)] %}
+<div class="col-sm-6"><label for="lead-{{ field }}" class="form-label">{{ label }}{% if required %} *{% endif %}</label><input id="lead-{{ field }}" name="{{ field }}" type="{{ type }}" class="form-control" maxlength="{{ maximum }}" {% if required %}required{% endif %} /></div>{% endfor %}
+<div class="col-12"><label for="lead-subject" class="form-label">Subject</label><input id="lead-subject" name="subject" class="form-control" maxlength="200" /></div>
+<div class="col-12"><label for="lead-message" class="form-label">Customer message *</label><textarea id="lead-message" name="message" class="form-control" rows="5" required maxlength="20000"></textarea></div>
+<div class="col-sm-6"><label for="lead-status" class="form-label">Status</label><select id="lead-status" name="status" class="form-select">{% for value in statuses %}<option>{{ value }}</option>{% endfor %}</select></div>
+<div class="col-sm-6"><label for="lead-follow_up_date" class="form-label">Follow-up date</label><input id="lead-follow_up_date" name="follow_up_date" type="date" class="form-control" /></div>
+<div class="col-12"><label for="lead-notes" class="form-label">Internal notes</label><textarea id="lead-notes" name="notes" class="form-control" rows="3" maxlength="10000" placeholder="Notes for your team; excluded from email drafts by default"></textarea></div>
+</div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" form="lead-form" class="btn btn-primary" id="lead-save-btn">Save Enquiry</button></div>
+</div></div></div>
+<div class="modal fade" id="enquiryEmailModal" tabindex="-1" aria-labelledby="enquiry-email-title" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header"><h2 class="modal-title fs-5" id="enquiry-email-title">Share customer enquiries</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+<div class="modal-body"><div id="email-form-error" class="alert alert-danger d-none" role="alert"></div>
+<p class="small text-muted">Review your draft, choose any recipient, then send from your own email app.</p><form id="enquiry-email-form">
+<div class="mb-3"><label for="enquiry-email-to" class="form-label">To *</label><input id="enquiry-email-to" class="form-control" required placeholder="recipient@example.com (comma-separated for multiple recipients)" autocomplete="email" /></div>
+<div class="mb-3"><label for="enquiry-email-subject" class="form-label">Subject *</label><input id="enquiry-email-subject" class="form-control" required maxlength="200" /></div>
+<label class="d-flex align-items-center gap-2 small mb-3"><input id="email-include-notes" type="checkbox" />Include internal notes, status and follow-up dates</label>
+<div><label for="enquiry-email-body" class="form-label">Message preview *</label><textarea id="enquiry-email-body" class="form-control" rows="12" required maxlength="1600000"></textarea></div>
+</form><p id="email-length-hint" class="small text-muted mt-3 mb-0">Your email app opens a draft. You review and send it there.</p></div>
+<div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-outline-primary" id="download-email-draft">Download complete draft</button><button type="submit" form="enquiry-email-form" class="btn btn-primary" id="open-email-app">Open email app</button></div>
+</div></div></div>

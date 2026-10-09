@@ -4,13 +4,13 @@
   --admin-hero: #e3f2d4; --admin-hero-ink: #254b2d; --admin-shadow: 0 8px 30px rgba(29, 62, 44, .045);
   --bs-body-bg: var(--admin-canvas); --bs-body-color: var(--admin-ink); --bs-secondary-color: var(--admin-muted);
   --bs-border-color: var(--admin-border); --bs-tertiary-bg: var(--admin-soft); --bs-link-color: var(--admin-accent);
-  --bs-link-hover-color: #0d5039; --bs-body-font-family: 'Space Grotesk', sans-serif;
+  --bs-link-color-rgb: 23, 108, 80; --bs-link-hover-color-rgb: 13, 80, 57; --bs-link-hover-color: #0d5039; --bs-body-font-family: 'Space Grotesk', sans-serif;
 }
 [data-bs-theme="dark"] {
   --admin-canvas: #0c1714; --admin-surface: #14241f; --admin-soft: #1c3028; --admin-ink: #e5eee8;
   --admin-muted: #a4b8ab; --admin-info: #99ccec; --admin-danger: #ff9c9c; --admin-border: #2d4338; --admin-accent: #b6e887;
   --admin-hero: #263e26; --admin-hero-ink: #d7edc3; --admin-shadow: 0 8px 30px rgba(0, 0, 0, .12);
-  --bs-link-hover-color: #d4f5b2;
+  --bs-link-color-rgb: 182, 232, 135; --bs-link-hover-color-rgb: 212, 245, 178; --bs-link-hover-color: #d4f5b2;
 }
 body { min-height: 100vh; font-size: .9rem; background: var(--admin-canvas); color: var(--admin-ink); -webkit-font-smoothing: antialiased; }
 h1, h2, h3, h4, h5, h6 { letter-spacing: -.035em; }
@@ -113,3 +113,16 @@ input[type="checkbox"] { accent-color: var(--admin-accent); width: 16px; height:
   .hero-panel { padding: 1.5rem; }.hero-art { display: none; }.hero-panel h1 { font-size: 2rem; }.metric-card { padding: 1rem; }.metric-top { font-size: .7rem; }.metric-icon { width: 28px; height: 28px; }.metric-value { font-size: 1.7rem; }.backup-panel { flex-wrap: wrap; }.login-topline .theme-toggle { width: auto; padding: .55rem .7rem; }.login-topline .theme-toggle [data-theme-label] { display: inline; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+.preset-panel { background: var(--admin-soft); padding: 1rem; border: 1px solid var(--admin-border); border-radius: .75rem; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.selection-toolbar { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; padding: 1rem; }
+.list-pagination { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding-block: 1rem; font-size: .75rem; color: var(--admin-muted); }
+.crm-contact { min-width: 190px; }.crm-enquiry { min-width: 240px; max-width: 360px; }.enquiry-message { max-height: 220px; overflow-y: auto; }
+.crm-enquiry summary { cursor: pointer; font-weight: 500; }.client-name:empty { display: none; }
+.empty-panel { text-align: center; padding: 2.5rem 1rem !important; color: var(--admin-muted) !important; }.empty-panel > i { display: block; font-size: 1.5rem; margin-bottom: 1rem; }.empty-panel strong, .empty-panel span { display: block; }.empty-panel span { font-size: .8rem; margin-top: .5rem; }
+.location-list:empty::before { content: 'No locations saved yet.'; display: block; color: var(--admin-muted); font-size: .8rem; margin-bottom: .75rem; }
+.label-workflow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }.label-workflow > div { padding: 1.2rem; border-radius: .8rem; background: var(--admin-soft); }.label-workflow strong { font-size: .8rem; }.label-workflow p { font-size: .75rem; color: var(--admin-muted); margin: .5rem 0 0; }.step-number { display: inline-grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: var(--admin-hero); color: var(--admin-hero-ink); margin-right: .5rem; font-size: .75rem; font-weight: 600; }
+.print-settings { position: sticky; top: 95px; }.mini-label { max-width: 150px; margin-inline: auto; aspect-ratio: 2/3; padding: 1rem .8rem; border: 1px solid var(--admin-border); border-radius: .35rem; display: flex; flex-direction: column; background: var(--admin-soft); gap: 1rem; }.mini-label span { font-size: .65rem; font-weight: 700; border-bottom: 1px solid var(--admin-border); padding-bottom: .5rem; }.mini-label strong { font-size: .7rem; }.mini-label i { font-size: 2rem; text-align: center; color: var(--admin-muted); margin-block: auto; }.mini-label small { font-size: .6rem; color: var(--admin-muted); }
+@media (max-width: 767.98px) { .label-workflow { grid-template-columns: 1fr; gap: .5rem; }.label-workflow > div { padding: .8rem 1rem; }.label-workflow p { margin-left: 2rem; }.print-settings { position: static; } }
+
+.sheet-search { flex: 1 1 280px; max-width: 560px; }

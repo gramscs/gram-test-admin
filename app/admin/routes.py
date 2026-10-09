@@ -12,7 +12,7 @@ from sqlalchemy.exc import DatabaseError, OperationalError
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Consignment, Lead, NewsletterSubscriber, db
+from app.models import Company, CompanyLocation, Consignment, Lead, NewsletterSubscriber, db
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,8 @@ def generate_backup():
             ("consignments", Consignment, {"eta_debug_json"}),
             ("leads", Lead, set()),
             ("newsletter_subscribers", NewsletterSubscriber, set()),
+            ("companies", Company, set()),
+            ("company_locations", CompanyLocation, set()),
         ]
 
         backup_payload = {}
@@ -106,32 +108,6 @@ def generate_backup():
     except Exception as exc:
         logger.error("Admin backup generation failed for %s: %s", admin_user, exc, exc_info=True)
         return jsonify({"success": False, "message": "Failed to generate backup."}), 500
-
-
-@admin_bp.route("/admin/leads", methods=["GET"], endpoint="leads_panel")
-@require_admin
-def leads_panel():
-    try:
-        leads = Lead.query.order_by(Lead.created_at.desc(), Lead.id.desc()).all()
-        rows = [
-            {
-                "id": lead.id,
-                "name": lead.name,
-                "email": lead.email,
-                "phone": lead.phone,
-                "subject": lead.subject,
-                "message": lead.message,
-                "created_at": lead.created_at.strftime("%Y-%m-%d %H:%M:%S") if lead.created_at else "",
-            }
-            for lead in leads
-        ]
-        return render_template("admin/leads.html", leads=rows)
-    except (OperationalError, DatabaseError):
-        logger.exception("Database error loading leads panel")
-        return render_template("admin/leads.html", leads=[], error="Unable to load leads right now.")
-    except Exception:
-        logger.exception("Unexpected error loading leads panel")
-        return render_template("admin/leads.html", leads=[], error="An unexpected error occurred.")
 
 
 @admin_bp.route("/admin/leads/reject-empty-phone", methods=["POST"])

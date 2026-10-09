@@ -1,7 +1,28 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, UTC
+from sqlalchemy import false, true
 
 db = SQLAlchemy()
+
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False, unique=True)
+    address = db.Column(db.Text)
+    email = db.Column(db.String(120))
+    phone = db.Column(db.String(30))
+    active = db.Column(db.Boolean, nullable=False, default=True, server_default=true())
+    locations = db.relationship("CompanyLocation", cascade="all, delete-orphan", lazy="selectin", order_by="CompanyLocation.id")
+
+
+class CompanyLocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    kind = db.Column(db.String(10), nullable=False)
+    label = db.Column(db.String(100), nullable=False)
+    address = db.Column(db.Text, nullable=False)
+    pincode = db.Column(db.String(6))
+    is_default = db.Column(db.Boolean, nullable=False, default=False, server_default=false())
+
 
 class Consignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -10,6 +31,8 @@ class Consignment(db.Model):
     pieces = db.Column(db.Integer, nullable=False, default=1, server_default="1")
     chargeable_weight = db.Column(db.Numeric(12, 3))
     chargeable_volume = db.Column(db.Numeric(12, 3))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), index=True)
+    company = db.relationship("Company", lazy="joined")
     status = db.Column(db.String(200))
     pickup_pincode = db.Column(db.String(6))
     pickup_address = db.Column(db.Text)
@@ -33,6 +56,10 @@ class Lead(db.Model):
     subject = db.Column(db.String(200))
     message = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    company_name = db.Column(db.String(200))
+    status = db.Column(db.String(20), nullable=False, default="New", server_default="New")
+    notes = db.Column(db.Text)
+    follow_up_date = db.Column(db.Date)
 
 
 class NewsletterSubscriber(db.Model):

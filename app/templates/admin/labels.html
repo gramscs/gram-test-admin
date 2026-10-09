@@ -1,37 +1,38 @@
-{% extends "admin/base.html" %}
+{% extends 'admin/base.html' %}
 {% set active_page = 'labels' %}
 {% block title %}B2B Labels – Gram SCS{% endblock %}
 {% block topbar_title %}B2B Labels{% endblock %}
 {% block content %}
-<div class="page-heading"><span class="page-eyebrow">READY TO SHIP</span><h1>B2B Shipping Labels</h1>
-<p class="text-muted">Select saved shipments to download 4×6-inch labels. Each piece gets its own label. Weight is in kg and volume in m³. Print at actual size (100%). Maximum 500 labels per download.</p></div>
+<div class="page-heading"><span class="page-eyebrow">PRINT & DISPATCH</span><h1>B2B Shipping Labels</h1><p>Select your saved shipments, check the piece count, then preview or download labels ready for the packing desk.</p></div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-<form method="get" class="d-flex gap-2 mb-3 surface-panel p-3">
-  <label class="visually-hidden" for="label-search">Search identifier</label>
-  <input id="label-search" name="search" value="{{ search }}" class="form-control" placeholder="Search LRN, Order ID, or AWB" />
-  <button class="btn btn-outline-primary">Search</button>
-</form>
-<form method="post" action="{{ url_for('admin.labels_generate', page=page, search=search) }}">
-  <div class="table-responsive surface-panel mb-3">
-    <table class="table mb-0">
-      <thead class="table-light"><tr><th><input id="select-all-labels" type="checkbox" aria-label="Select all shipments on this page" /></th><th>Type</th><th>Identifier</th><th>Pieces</th><th>Ship From</th><th>Ship To</th><th>Weight (kg)</th><th>Volume (m³)</th></tr></thead>
-      <tbody>{% for row in rows %}<tr>
-        <td><input type="checkbox" name="consignment_ids" value="{{ row.id }}" aria-label="Select {{ row.consignment_number }}" /></td>
-        <td>{{ row.identifier_type or 'LRN' }}</td><td>{{ row.consignment_number }}</td><td>{{ row.pieces or 1 }}</td>
-        <td>{{ row.pickup_tag or row.pickup_address or '—' }}</td><td>{{ row.drop_tag or row.drop_address or '—' }}</td>
-        <td>{{ row.chargeable_weight if row.chargeable_weight is not none else '—' }}</td><td>{{ row.chargeable_volume if row.chargeable_volume is not none else '—' }}</td>
-      </tr>{% else %}<tr><td colspan="8" class="text-center text-muted p-4">No matching saved shipments. Add and save shipments in Consignments first.</td></tr>{% endfor %}</tbody>
-    </table>
-  </div>
-  <button class="btn btn-primary" {% if not rows %}disabled{% endif %}>Download B2B Labels PDF</button>
-  <span class="ms-2 text-muted">Selections apply to this page.</span>
-</form>
-<div class="d-flex gap-3 align-items-center mt-3">
-{% if page > 1 %}<a href="{{ url_for('admin.labels_panel', page=page-1, search=search) }}">Previous</a>{% endif %}
-<span>Page {{ page }} · {{ total }} shipments</span>
-{% if page * 25 < total %}<a href="{{ url_for('admin.labels_panel', page=page+1, search=search) }}">Next</a>{% endif %}
+<div class="label-workflow mb-4">
+  <div><span class="step-number">1</span><strong>Choose shipments</strong><p>Select the consignments you’re sending.</p></div>
+  <div><span class="step-number">2</span><strong>Check print settings</strong><p>One 4×6-inch label for each piece.</p></div>
+  <div><span class="step-number">3</span><strong>Preview & print</strong><p>Print the PDF at actual size (100%).</p></div>
 </div>
+<form method="get" class="surface-panel p-3 d-flex flex-wrap gap-2 mb-3"><label class="visually-hidden" for="label-search">Search shipments</label><input id="label-search" name="search" value="{{ search }}" class="form-control sheet-search" placeholder="Identifier, client company or route tag" /><button class="btn btn-outline-primary">Search</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.labels_panel') }}">Reset</a></form>
+<form method="post" action="{{ url_for('admin.labels_generate', page=page, search=search) }}" id="labels-form">
+<div class="row g-4">
+  <div class="col-xl-9">
+    <div class="surface-panel table-responsive"><table class="table mb-0"><thead><tr><th scope="col"><input id="select-all-labels" type="checkbox" aria-label="Select all shipments on this page" /></th><th scope="col">Shipment</th><th scope="col">Route</th><th scope="col">Pieces</th><th scope="col">Chargeable</th></tr></thead><tbody>
+    {% for row in rows %}<tr><td><input type="checkbox" name="consignment_ids" value="{{ row.id }}" data-pieces="{{ row.pieces or 1 }}" aria-label="Select {{ row.consignment_number }}" /></td><td><strong>{{ row.consignment_number }}</strong><span class="d-block small text-muted">{{ row.identifier_type or 'LRN' }}{% if row.company %} · {{ row.company.name }}{% endif %}</span></td><td><span class="small d-block">{{ row.pickup_tag or row.pickup_pincode or 'Pickup not set' }} <i class="fa fa-long-arrow-right mx-1 text-muted" aria-hidden="true"></i> {{ row.drop_tag or row.drop_pincode or 'Drop not set' }}</span><span class="small text-muted d-block">{{ row.drop_address or 'No destination address' }}</span></td><td>{{ row.pieces or 1 }}</td><td class="text-nowrap small">{{ row.chargeable_weight if row.chargeable_weight is not none else '—' }} kg<span class="d-block text-muted">{{ row.chargeable_volume if row.chargeable_volume is not none else '—' }} m³</span></td></tr>
+    {% else %}<tr><td colspan="5" class="empty-panel"><i class="fa fa-barcode" aria-hidden="true"></i><strong>No matching saved shipments</strong><span>Add and save shipments in Consignments first.</span></td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="list-pagination"><span>Page {{ page }} · {{ total }} shipments</span><div class="d-flex gap-2">{% if page > 1 %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.labels_panel', page=page-1, search=search) }}">Previous</a>{% endif %}{% if page * 25 < total %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.labels_panel', page=page+1, search=search) }}">Next</a>{% endif %}</div></div>
+  </div>
+  <div class="col-xl-3"><aside class="surface-panel print-settings p-3">
+    <h2 class="fs-6 fw-bold mb-3">Print settings</h2>
+    <div class="mini-label" aria-hidden="true"><span>GRAM SCS</span><strong>DELIVER TO</strong><i class="fa fa-cube"></i><small>One label per piece</small></div>
+    <div class="d-flex justify-content-between small mt-3"><span class="text-muted">Size</span><strong>4 × 6 inches</strong></div>
+    <div class="d-flex justify-content-between small mt-2"><span class="text-muted">Shipments selected</span><strong id="label-selected-count">0</strong></div>
+    <div class="d-flex justify-content-between mt-2 mb-3"><span class="text-muted small">Piece labels</span><strong id="label-piece-count">0</strong></div>
+    <label class="d-flex align-items-center gap-2 small"><input id="include-label-barcode" type="checkbox" checked />Include Code 128 barcode</label><input name="barcode" id="label-barcode-value" type="hidden" value="1" />
+    <p class="small text-muted mt-2">Encodes your shipment identifier. EAN is not required for this barcode.</p>
+    <div id="label-limit-error" class="alert alert-warning small d-none" role="alert">Maximum 500 labels per download. Select fewer pieces.</div>
+    <button class="btn btn-outline-primary w-100 mb-2" name="delivery" value="preview" formtarget="_blank" id="preview-labels-btn" disabled><i class="fa fa-eye me-1" aria-hidden="true"></i>Preview labels</button>
+    <button class="btn btn-primary w-100" name="delivery" value="download" id="download-labels-btn" disabled><i class="fa fa-download me-1" aria-hidden="true"></i>Download B2B Labels PDF</button>
+    <p class="small text-muted mt-3 mb-0">Selections apply to this page. Print at 100% scale.</p>
+  </aside></div>
+</div></form>
 {% endblock %}
-{% block scripts %}
-<script>document.getElementById('select-all-labels').addEventListener('change', function () { document.querySelectorAll('[name="consignment_ids"]').forEach(input => { input.checked = this.checked; }); });</script>
-{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/admin/labels.js') }}"></script>{% endblock %}

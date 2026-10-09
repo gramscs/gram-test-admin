@@ -171,6 +171,7 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("modal-drop-pincode").value = row.drop_pincode || "";
         document.getElementById("modal-drop-tag").value = row.drop_tag || "";
         document.getElementById("modal-drop-date").value = row.drop_date || "";
+        window.companyPresets.setRow(row);
         // POD preview and controls
         try {
             if (row.pod_image) {
@@ -288,6 +289,7 @@ document.addEventListener("DOMContentLoaded", function () {
         var data = source || {};
         return {
             id: data.id || fallbackId || null,
+            company_id: data.company_id ?? null, company_name: data.company_name || '',
             consignment_number: data.consignment_number || "",
             identifier_type: data.identifier_type || "LRN", pieces: data.pieces ?? 1,
             chargeable_weight: data.chargeable_weight ?? "", chargeable_volume: data.chargeable_volume ?? "",
@@ -342,7 +344,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         tr.innerHTML =
             '<td><div class="cell-stack">' + buildIdentifierSelect(source.identifier_type) +
-                buildTextInput("consignment_number", source.consignment_number || "", "Identifier", 64) + '</div></td>' +
+                buildTextInput("consignment_number", source.consignment_number || "", "Identifier", 64) +
+                '<span class="client-name small text-muted">' + escapeHtml(source.company_name || '') + '</span></div></td>' +
             "<td>" + buildNumberInput('pieces', source.pieces ?? 1, 1, 1) + "</td>" +
             '<td><div class="cell-stack"><label class="unit-field">' + buildNumberInput('chargeable_weight', source.chargeable_weight ?? '', 0, '0.001') + '<span>kg</span></label>' +
                 '<label class="unit-field">' + buildNumberInput('chargeable_volume', source.chargeable_volume ?? '', 0, '0.001') + '<span>m³</span></label></div></td>' +
@@ -421,6 +424,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         source.consignment_number = consignmentNumber;
+        source.company_id = document.getElementById('modal-company-id').value || null;
+        source.company_name = window.companyPresets.companyName(source.company_id);
         ['identifier_type', 'pieces', 'chargeable_weight', 'chargeable_volume'].forEach(function (name) {
             source[name] = document.getElementById('modal-' + name.replaceAll('_', '-')).value;
         });
@@ -445,6 +450,7 @@ document.addEventListener("DOMContentLoaded", function () {
             var consignmentInput = tr.querySelector('.consignment_number');
             if (consignmentInput) consignmentInput.value = source.consignment_number || "";
             tr.dataset.consignmentNumber = source.consignment_number || "";
+            tr.querySelector('.client-name').textContent = source.company_name || '';
             var statusSelect = tr.querySelector('.status');
             if (statusSelect) statusSelect.value = source.status || "";
             tr.dataset.row = JSON.stringify(source);

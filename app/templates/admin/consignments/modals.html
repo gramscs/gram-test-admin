@@ -11,6 +11,18 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        <fieldset class="preset-panel mb-4">
+          <legend class="fs-6 fw-bold">Client company</legend>
+          <label for="modal-company-id" class="visually-hidden">Client company</label>
+          <select id="modal-company-id" class="form-select" data-options-url="{{ url_for('admin.companies_options') }}"><option value="">No client selected</option></select>
+          <div id="company-presets" class="row g-3 mt-1 d-none">
+            {% for side, title in [('pickup', 'Pickup'), ('drop', 'Drop')] %}
+            <div class="col-sm-6"><label for="modal-{{ side }}-preset" class="form-label">Saved {{ side }} location</label><select id="modal-{{ side }}-preset" class="form-select"><option value="">Custom {{ side }}</option></select></div>
+            {% endfor %}
+          </div>
+          <p class="small text-muted mt-2 mb-0">Defaults fill when you select a client. You can edit every address below; changes apply to this shipment only.</p>
+          <div id="company-options-error" class="small text-danger mt-2 d-none" role="alert"></div>
+        </fieldset>
         <fieldset class="mb-4">
           <legend class="fs-6 fw-bold">Shipment</legend>
           <div class="row g-3">

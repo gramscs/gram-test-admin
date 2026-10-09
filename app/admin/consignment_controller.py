@@ -20,7 +20,7 @@ from sqlalchemy.exc import DatabaseError, OperationalError, ProgrammingError
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Consignment, db
+from app.models import Company, Consignment, db
 
 logger = logging.getLogger(__name__)
 MAX_POD_IMAGE_BYTES = 5 * 1024 * 1024
@@ -210,6 +210,8 @@ def _serialize_consignment(consignment):
         "pieces": consignment.pieces or 1,
         "chargeable_weight": str(consignment.chargeable_weight) if consignment.chargeable_weight is not None else None,
         "chargeable_volume": str(consignment.chargeable_volume) if consignment.chargeable_volume is not None else None,
+        "company_id": consignment.company_id,
+        "company_name": consignment.company.name if consignment.company else None,
         "status": getattr(consignment, "status", None),
         "pickup_pincode": getattr(consignment, "pickup_pincode", None),
         "pickup_address": getattr(consignment, "pickup_address", None),
@@ -283,6 +285,7 @@ def consignments_list_api():
                     Consignment.drop_pincode.ilike(pattern),
                     Consignment.pickup_address.ilike(pattern),
                     Consignment.drop_address.ilike(pattern),
+                    Consignment.company.has(Company.name.ilike(pattern)),
                 )
             )
 
@@ -334,7 +337,7 @@ def consignments_import_template_excel():
         "drop_pincode",
         "drop_tag",
         "drop_date",
-        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume",
+        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume", "company_id",
     ])
 
     buffer = io.BytesIO()
@@ -430,7 +433,7 @@ def consignments_export_excel():
         "drop_date",
         "pickup_address",
         "drop_address",
-        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume",
+        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume", "company_id", "client_company",
     ]
     sheet.append(headers)
 
@@ -447,6 +450,7 @@ def consignments_export_excel():
             getattr(consignment, "drop_address", None),
             consignment.identifier_type, consignment.pieces,
             consignment.chargeable_weight, consignment.chargeable_volume,
+            consignment.company_id, consignment.company.name if consignment.company else None,
         ])
 
     buffer = io.BytesIO()
@@ -506,6 +510,16 @@ def _normalize_shipment_fields(row, existing=None):
     except (InvalidOperation, ValueError):
         raise ValueError("Pieces must be a whole number from 1 to 10000.") from None
     fields = {"identifier_type": identifier_type, "pieces": int(pieces)}
+    company_id = value("company_id", None)
+    if company_id in (None, ""):
+        fields["company_id"] = None
+    else:
+        from app.admin.input_validation import positive_id
+        company_id = positive_id(company_id)
+        company = db.session.get(Company, company_id)
+        if not company or (not company.active and company_id != getattr(existing, "company_id", None)):
+            raise ValueError("Choose an active client company. Existing archived links can be retained.")
+        fields["company_id"] = company_id
     for name in ("chargeable_weight", "chargeable_volume"):
         raw = value(name, None)
         if raw in (None, ""):
@@ -749,8 +763,6 @@ def consignments_save():
 
             if not consignment:
                 consignment = existing_by_number or Consignment()
-                if not existing_by_number:
-                    db.session.add(consignment)
 
             if len(consignment_number) > 64 or not consignment_number.isascii() or not all(32 <= ord(char) <= 126 for char in consignment_number):
                 errors.append({"index": index, "field": "consignment_number", "message": "Identifier must contain 1–64 printable ASCII characters."})
@@ -763,6 +775,7 @@ def consignments_save():
             _apply_consignment_payload(consignment, row)
             for field, value in fields.items():
                 setattr(consignment, field, value)
+            db.session.add(consignment)
             _save_pod_upload_for_row(consignment, row, errors, index)
             saved_count += 1
 
