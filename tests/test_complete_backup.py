@@ -54,7 +54,7 @@ def test_complete_backup_contains_all_tables_fields_and_documents_in_data_order(
     archive, data, report = unpack(response)
     assert response.headers['X-Backup-Status'] == 'complete'
     assert response.headers['Cache-Control'] == 'private, no-store'
-    assert data['metadata']['table_counts'] == {'companies': 1, 'company_locations': 2, 'consignments': 2, 'leads': 1, 'newsletter_subscribers': 1}
+    assert data['metadata']['table_counts'] == {'companies': 1, 'company_locations': 2, 'consignments': 2, 'leads': 1, 'newsletter_subscribers': 1, 'mis_view': 0, 'mis_report': 0}
     assert data['companies'][0]['active'] is False
     assert data['company_locations'][0]['address'] == 'Pickup address'
     assert data['leads'][0]['notes'] == 'Keep notes'
@@ -74,7 +74,7 @@ def test_complete_backup_contains_all_tables_fields_and_documents_in_data_order(
         assert entry['sha256'] == hashlib.sha256(archive.read(entry['archive_path'])).hexdigest()
     assert any(entry['kind'] == 'unlinked_upload' for entry in entries)
     workbook = load_workbook(io.BytesIO(archive.read('admin-data.xlsx')))
-    assert set(workbook.sheetnames) == {'companies', 'company_locations', 'consignments', 'leads', 'newsletter_subscribers', 'document_report', 'inventory_errors'}
+    assert set(workbook.sheetnames) == {'companies', 'company_locations', 'consignments', 'leads', 'newsletter_subscribers', 'mis_view', 'mis_report', 'document_report', 'inventory_errors'}
     sheet = workbook['consignments']
     values = list(sheet.values)
     rows = [dict(zip(values[0], row)) for row in values[1:]]

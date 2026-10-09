@@ -69,3 +69,31 @@ class NewsletterSubscriber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
+class MisView(db.Model):
+    """Reusable reporting settings; relative periods refresh when loaded."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    notes = db.Column(db.String(500), nullable=False, default='')
+    filters_json = db.Column(db.Text, nullable=False)
+    columns_json = db.Column(db.Text, nullable=False)
+    output_format = db.Column(db.String(10), nullable=False, default='xlsx')
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_by = db.Column(db.String(120))
+
+
+class MisReport(db.Model):
+    """Immutable generated report files, with an editable display name and notes."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    notes = db.Column(db.String(500), nullable=False, default='')
+    output_format = db.Column(db.String(10), nullable=False)
+    filters_json = db.Column(db.Text, nullable=False)
+    columns_json = db.Column(db.Text, nullable=False)
+    summary_json = db.Column(db.Text, nullable=False)
+    generated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    generated_by = db.Column(db.String(120))
+    row_count = db.Column(db.Integer, nullable=False)
+    file_ref = db.Column(db.String(1024), nullable=False)
+    file_name = db.Column(db.String(255), nullable=False)

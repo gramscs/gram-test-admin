@@ -17,7 +17,7 @@
     <button class="btn mobile-menu-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#admin-navigation" aria-expanded="false" aria-controls="admin-navigation" aria-label="Toggle navigation"><i class="fa fa-bars" aria-hidden="true"></i></button>
     <div class="collapse" id="admin-navigation">
       <nav aria-label="Main navigation" class="sidebar-navigation">
-        {% for group, entries in [('Overview', [('dashboard', 'dashboard', 'th-large', 'Dashboard')]), ('Shipment operations', [('consignments', 'consignments_panel', 'truck', 'Consignments'), ('labels', 'labels_panel', 'barcode', 'B2B Labels')]), ('Master data', [('companies', 'companies_panel', 'building-o', 'Companies')])] %}
+        {% for group, entries in [('Reporting', [('dashboard', 'dashboard', 'th-large', 'Dashboard'), ('mis', 'mis_panel', 'line-chart', 'MIS Reports')]), ('Shipment operations', [('consignments', 'consignments_panel', 'truck', 'Consignments'), ('labels', 'labels_panel', 'barcode', 'B2B Labels')]), ('Master data', [('companies', 'companies_panel', 'building-o', 'Companies')])] %}
         <section class="nav-group" aria-label="{{ group }}">
           <h2 class="nav-caption">{{ group }}</h2>
           {% for page, endpoint, icon, label in entries %}

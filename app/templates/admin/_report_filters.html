@@ -1,0 +1,8 @@
+<div class="report-filters">
+  <label>Pickup-date period<select name="period" class="form-select" id="report-period">{% for value, label in options.periods.items() %}<option value="{{ value }}" {% if filters.period == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <label class="custom-date" {% if filters.period != 'custom' %}hidden{% endif %}>From<input class="form-control" type="date" name="start" value="{{ filters.start }}" /></label>
+  <label class="custom-date" {% if filters.period != 'custom' %}hidden{% endif %}>Through<input class="form-control" type="date" name="end" value="{{ filters.end }}" /></label>
+  <label>Client<select class="form-select" name="company"><option value="">All clients</option><option value="unassigned" {% if filters.company == 'unassigned' %}selected{% endif %}>Unassigned client</option>{% for company in options.companies %}<option value="{{ company.id }}" {% if filters.company == company.id|string %}selected{% endif %}>{{ company.name }}{% if not company.active %} (archived){% endif %}</option>{% endfor %}</select></label>
+  <label>Current status<select class="form-select" name="status"><option value="">All statuses</option>{% for status in options.statuses %}<option {% if filters.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></label>
+  {% if active_page == 'dashboard' %}<button class="btn btn-primary" type="submit">Apply filters</button><a class="filter-reset" href="{{ url_for('admin.dashboard') }}">Reset</a>{% endif %}
+</div>

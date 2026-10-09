@@ -1,65 +1,40 @@
-{% extends "admin/base.html" %}
-{% block title %}Admin Dashboard – Gram SCS{% endblock %}
+{% extends 'admin/base.html' %}
+{% block title %}Shipment overview – Gram SCS{% endblock %}
 {% set active_page = 'dashboard' %}
-{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_title %}Shipment overview{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-reporting.css') }}" />{% endblock %}
 {% block content %}
-<section class="hero-panel">
-  <div>
-    <span class="page-eyebrow">YOUR OPERATIONS, AT A GLANCE</span>
-    <h1>Welcome back!<br />Let's keep things moving.</h1>
-    <p>Your shipments, client companies and shipping labels. Everything you need for the day, in one place.</p>
-    <a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-primary">Manage consignments <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></a>
-  </div>
-  <div class="hero-art" aria-hidden="true">
-    <svg viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="120" cy="90" r="82" stroke="currentColor" stroke-opacity=".1" /><circle cx="120" cy="90" r="58" stroke="currentColor" stroke-opacity=".1" />
-      <path d="M42 121C90 121 64 54 119 54S158 122 205 122" stroke="currentColor" stroke-opacity=".5" stroke-width="2" stroke-dasharray="5 6" />
-      <rect x="80" y="65" width="78" height="66" rx="13" fill="currentColor" fill-opacity=".08" />
-      <path d="M96 86L120 74L144 86V112L120 125L96 112V86ZM96 86L120 99L144 86M120 99V125M109 80L133 93" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
-      <circle cx="40" cy="121" r="8" fill="currentColor" /><circle cx="205" cy="122" r="8" fill="currentColor" />
-      <circle cx="179" cy="43" r="19" fill="currentColor" fill-opacity=".12" /><path d="M171 43L177 49L187 37" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
-  </div>
-</section>
+<div class="report-heading">
+  <div><span class="page-eyebrow">OPERATIONS INTELLIGENCE</span><h1>Shipment overview<span class="heading-dot">.</span></h1><p>A clear view of your shipments. A better way to make decisions.</p></div>
+  <div class="report-actions"><button class="btn btn-outline-secondary" id="presentation-toggle" type="button" aria-pressed="false"><i class="fa fa-expand" aria-hidden="true"></i> Present</button><a class="btn btn-primary" href="{{ url_for('admin.mis_panel', **(filters or {})) }}"><i class="fa fa-line-chart" aria-hidden="true"></i> Manage MIS</a></div>
+</div>
 {% if error %}<div class="alert alert-warning" role="alert">{{ error }}</div>{% endif %}
-<div class="row g-3">
-  {% for key, label, icon, caption in [('total', 'Total consignments', 'cubes', 'All saved shipments'), ('in_transit', 'In transit', 'truck', 'Status: In Transit'), ('delivered', 'Delivered', 'check-circle', 'Completed deliveries'), ('out_for_delivery', 'Out for delivery', 'map-marker', 'On the final delivery leg')] %}
-  <div class="col-6 col-xl-3">
-    <div class="surface-panel metric-card">
-      <div class="metric-top"><span>{{ label }}</span><span class="metric-icon"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span></div>
-      <div class="metric-value" data-metric="{{ key }}">{{ metrics.get(key, '—') }}</div>
-      <div class="metric-caption">{{ caption }}</div>
-    </div>
-  </div>
-  {% endfor %}
+{% if report %}
+<form class="surface-panel filter-panel" method="get">{% include 'admin/_report_filters.html' %}</form>
+<div class="snapshot-line"><span><span class="live-dot" aria-hidden="true"></span>{{ report.period_label }} <span class="snapshot-client">· {{ report.client_label }} · {{ report.status_label }}</span></span><span>Snapshot {{ report.generated_at }}</span></div>
+{% endif %}
+<div class="kpi-grid">
+{% for key, label, icon, caption in [('total', 'Total shipments', 'cubes', 'Shipments in this view'), ('delivered', 'Delivered', 'check-circle', 'Current delivery status'), ('in_transit', 'In transit', 'truck', 'Moving through the network'), ('out_for_delivery', 'Out for delivery', 'map-marker', 'On the final delivery leg')] %}
+  <article class="surface-panel intelligence-kpi {{ 'kpi-featured' if key == 'total' }}"><span class="kpi-label">{{ label }}<i class="fa fa-{{ icon }}" aria-hidden="true"></i></span><div class="kpi-number" data-metric="{{ key }}">{{ metrics.get(key, '—') }}</div><span class="kpi-caption">{{ caption }}</span>{% if key == 'delivered' and report %}<span class="kpi-pill">{{ metrics.delivered_share }}% of this view</span>{% endif %}</article>
+{% endfor %}
 </div>
-<div class="section-heading"><h2>Your workspace</h2><span class="text-muted small">Pick up where you left off</span></div>
-<div class="row g-3 mb-4">
-  {% for endpoint, icon, tone, title, description, action in [('consignments_panel', 'truck', 'green', 'Consignment Sheet', 'Add shipments, update their details and keep your records organized.', 'Open consignments'), ('labels_panel', 'barcode', 'blue', 'B2B Labels', 'Turn saved shipments into print-ready labels, one for every piece.', 'Create shipping labels'), ('companies_panel', 'building-o', 'orange', 'Client Companies', 'Save client addresses and regular pickup/drop locations for faster shipment entry.', 'Manage clients')] %}
-  <div class="col-md-4"><a href="{{ url_for('admin.' ~ endpoint) }}" class="surface-panel workspace-card">
-    <span class="workspace-icon tone-{{ tone }}"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span>
-    <h3>{{ title }}</h3><p>{{ description }}</p><span class="workspace-cta">{{ action }}<i class="fa fa-arrow-right" aria-hidden="true"></i></span>
-  </a></div>
-  {% endfor %}
+{% if report %}
+<div class="measure-strip surface-panel">
+  {% for value, label, note in [(metrics.pieces, 'Total pieces', 'Across selected shipments'), ('{:,.3f}'.format(metrics.weight), 'Chargeable weight · kg', metrics.weight_recorded|string ~ ' / ' ~ metrics.total|string ~ ' shipments recorded'), ('{:,.3f}'.format(metrics.volume), 'Chargeable volume · m³', metrics.volume_recorded|string ~ ' / ' ~ metrics.total|string ~ ' shipments recorded'), (metrics.open, 'Open shipments', 'All statuses except Delivered')] %}<div><strong>{{ value }}</strong><span>{{ label }}</span><small>{{ note }}</small></div>{% endfor %}
 </div>
-<section class="surface-panel overflow-hidden">
-  <div class="panel-header"><h2>Recently added consignments</h2><a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-outline-secondary btn-sm">View all</a></div>
-  <div class="table-responsive">
-    <table class="table mb-0">
-      <thead><tr><th scope="col">Identifier</th><th scope="col">Route</th><th scope="col">Pieces</th><th scope="col">Status</th></tr></thead>
-      <tbody>
-        {% for row in recent_shipments %}
-        <tr><td><strong>{{ row.consignment_number }}</strong><span class="d-block text-muted small">{{ row.identifier_type or 'LRN' }}</span></td>
-          <td>{{ row.pickup_tag or row.pickup_pincode or '—' }} <i class="fa fa-long-arrow-right mx-2 text-muted" aria-hidden="true"></i> {{ row.drop_tag or row.drop_pincode or '—' }}</td>
-          <td>{{ row.pieces or 1 }}</td><td><span class="status-badge {{ 'tone-green' if row.status == 'Delivered' else 'tone-blue' if row.status in ['In Transit', 'Out for Delivery'] else 'tone-orange' }}">{{ row.status or 'No status' }}</span></td></tr>
-        {% else %}<tr><td colspan="4" class="text-center text-muted py-4">{{ 'Recent shipments are unavailable.' if error else 'Your next shipment starts here. Add a consignment to get going.' }}</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-<section class="surface-panel backup-panel">
-  <div class="d-flex align-items-center gap-3"><span class="metric-icon"><i class="fa fa-database" aria-hidden="true"></i></span><div><h2>Database Backup</h2><p>All admin records and uploaded documents in one ZIP, with files grouped by consignment.</p></div></div>
-  <a href="{{ url_for('admin.generate_backup') }}" class="btn btn-outline-secondary"><i class="fa fa-download me-2" aria-hidden="true"></i>Download Backup ZIP</a>
-</section>
-<p class="small text-muted mt-2">The ZIP includes an Excel workbook and a file report. <a href="{{ url_for('admin.generate_backup', format='json') }}">Download data only (JSON)</a></p>
+<div class="chart-grid">
+  <section class="surface-panel chart-panel trend-panel"><div class="chart-heading"><div><span class="page-eyebrow">SHIPMENT ACTIVITY</span><h2>Pickup volume</h2><p>{{ report.grain|capitalize }} counts · based on pickup date</p></div><span class="chart-tag">{{ metrics.total - metrics.undated }} dated shipments</span></div><div class="chart-canvas" id="pickup-chart"></div><details class="chart-data"><summary>View chart data</summary><div class="chart-data-scroll"><table class="table table-sm"><thead><tr><th>Pickup period</th><th>Shipments</th></tr></thead><tbody>{% for item in report.trend %}<tr><td>{{ item.label }}</td><td>{{ item.count }}</td></tr>{% else %}<tr><td colspan="2">No valid pickup dates.</td></tr>{% endfor %}</tbody></table></div></details></section>
+  <section class="surface-panel chart-panel"><div class="chart-heading"><div><span class="page-eyebrow">DELIVERY MIX</span><h2>Current status</h2><p>Where your shipments stand today</p></div></div><div class="donut-layout"><div id="status-chart"></div><div id="status-legend" class="chart-legend"></div></div><noscript><ul>{% for item in report.statuses %}<li>{{ item.label }}: {{ item.count }}</li>{% endfor %}</ul></noscript></section>
+</div>
+<div class="chart-grid equal-charts">
+  <section class="surface-panel chart-panel"><div class="chart-heading"><div><span class="page-eyebrow">CLIENT PORTFOLIO</span><h2>Volume by client</h2><p>Top 6 clients · click a client to explore</p></div><a class="small" href="{{ url_for('admin.mis_panel', **filters) }}">Full MIS <i class="fa fa-angle-right" aria-hidden="true"></i></a></div><div class="ranking-list">{% for item in report.clients[:6] %}<a class="rank-row" href="{{ url_for('admin.dashboard', period=filters.period, start=filters.start, end=filters.end, status=filters.status, company=item.key) }}"><span class="rank-label">{{ item.label }}</span><strong>{{ item.count }}</strong><span class="rank-track"><span style="width:{{ item.count / report.clients[0].count * 100 }}%"></span></span><small>{{ item.pieces }} pieces · {{ '{:,.3f}'.format(item.weight) }} kg</small></a>{% else %}<p class="chart-empty">No shipments in this view.</p>{% endfor %}</div></section>
+  <section class="surface-panel chart-panel"><div class="chart-heading"><div><span class="page-eyebrow">NETWORK ACTIVITY</span><h2>Busiest routes</h2><p>Top 5 pickup and drop combinations</p></div></div><div class="route-list">{% for item in report.routes[:5] %}<div class="route-row"><span class="route-index">{{ loop.index }}</span><span>{{ item.label }}</span><strong>{{ item.count }}<small>shipments</small></strong></div>{% else %}<p class="chart-empty">Add pickup and drop locations to see your network.</p>{% endfor %}</div></section>
+</div>
+<section class="surface-panel chart-panel attention-panel"><div class="chart-heading"><div><span class="page-eyebrow">OPERATIONS WATCHLIST</span><h2>What needs attention</h2><p>Document references and expected dates in this view</p></div><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.consignments_panel') }}">Open shipment tracker</a></div><div class="attention-grid">{% for value, label, explanation, tone in [(metrics.past_expected, 'Past expected date', 'Open shipments with an expected drop date before today.', 'amber'), (metrics.missing_pod, 'Delivered without POD', 'Delivered shipments with no POD attached.', 'purple'), (metrics.missing_invoice, 'Invoices missing', 'Shipments with no invoice attached.', 'blue')] %}<div class="attention-item {{ tone }}"><span class="attention-count">{{ value }}</span><div><strong>{{ label }}</strong><p>{{ explanation }}</p></div></div>{% endfor %}</div><div class="coverage-note"><i class="fa fa-info-circle" aria-hidden="true"></i><span>Reports show current status for the selected pickup-date period. Expected dates are estimates. {% if metrics.excluded_undated %}{{ metrics.excluded_undated }} shipment(s) without a valid pickup date were excluded by the date filter. {% endif %}{% if metrics.undated %}{{ metrics.undated }} included shipment(s) have no valid pickup date and do not appear in the trend. {% endif %}{% if metrics.invalid_measurements %}{{ metrics.invalid_measurements }} shipment(s) have invalid measurements, which are excluded from totals. {% endif %}Attached references do not confirm file availability.</span></div></section>
+<section class="report-download-panel"><div><span class="page-eyebrow">READY FOR YOUR NEXT REVIEW</span><h2>Take the insight with you.</h2><p>Download this filtered view, or save and organize your MIS reports.</p></div><div class="report-actions"><a class="btn btn-primary" href="{{ url_for('admin.mis_export', format='xlsx', **filters) }}"><i class="fa fa-file-excel-o" aria-hidden="true"></i> Excel MIS</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.mis_export', format='pdf', **filters) }}"><i class="fa fa-file-pdf-o" aria-hidden="true"></i> Management PDF</a></div></section>
+<script type="application/json" id="report-chart-data">{{ chart_data|tojson }}</script>
+{% endif %}
+<section class="surface-panel overflow-hidden recent-panel"><div class="panel-header"><h2>Latest shipments in this view</h2><a class="small" href="{{ url_for('admin.consignments_panel') }}">Open shipment tracker →</a></div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Identifier</th><th>Client / route</th><th>Pieces</th><th>Status</th></tr></thead><tbody>{% for row in recent_shipments %}<tr><td><strong>{{ row.consignment_number }}</strong><span class="d-block text-muted small">{{ row.identifier_type }}</span></td><td><span class="d-block">{{ row.company.name if row.company else 'Unassigned client' }}</span><small class="text-muted">{{ row.pickup_tag or row.pickup_pincode or '—' }} → {{ row.drop_tag or row.drop_pincode or '—' }}</small></td><td>{{ row.pieces }}</td><td><span class="status-badge {{ 'tone-green' if row.status == 'Delivered' else 'tone-blue' }}">{{ row.status or 'No status' }}</span></td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted py-4">{{ 'Recent shipments are unavailable.' if error else 'No shipments in this view. Add a consignment to get going.' }}</td></tr>{% endfor %}</tbody></table></div></section>
+<div class="dashboard-footer"><span>Keep all your admin data and uploads together.</span><a href="{{ url_for('admin.generate_backup') }}"><i class="fa fa-download" aria-hidden="true"></i> Download Backup ZIP</a><a href="{{ url_for('admin.generate_backup', format='json') }}">Data only (JSON)</a></div>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/admin/reporting.js') }}"></script>{% endblock %}

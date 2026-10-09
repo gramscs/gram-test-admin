@@ -9,3 +9,4 @@ from app.admin import consignment_controller  # noqa: E402,F401
 from app.admin import labels  # noqa: E402,F401
 from app.admin import companies  # noqa: E402,F401
 from app.admin import documents  # noqa: E402,F401
+from app.admin import mis  # noqa: E402,F401

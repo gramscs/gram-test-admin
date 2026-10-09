@@ -7,13 +7,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from flask import jsonify, render_template, request, send_file, session
-from sqlalchemy import func
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Consignment, db
+from app.models import db
 
 logger = logging.getLogger(__name__)
 
@@ -21,29 +20,17 @@ logger = logging.getLogger(__name__)
 @admin_bp.route("/admin/dashboard", methods=["GET"])
 @require_admin
 def dashboard():
+    from app.admin.reporting import analyze, chart_data, filter_options, normalize_filters
     try:
-        status_counts = dict(
-            db.session.query(Consignment.status, func.count(Consignment.id))
-            .group_by(Consignment.status)
-            .all()
-        )
-        metrics = {
-            "total": sum(status_counts.values()),
-            "in_transit": status_counts.get("In Transit", 0),
-            "delivered": status_counts.get("Delivered", 0),
-            "out_for_delivery": status_counts.get("Out for Delivery", 0),
-        }
-        recent_shipments = Consignment.query.order_by(Consignment.id.desc()).limit(5).all()
-        return render_template("admin/dashboard.html", metrics=metrics, recent_shipments=recent_shipments)
+        filters = normalize_filters(request.args.to_dict())
+        report = analyze(filters)
+        return render_template('admin/dashboard.html', metrics=report['metrics'], recent_shipments=report['recent'], report=report, chart_data=chart_data(report), filters=filters, options=filter_options())
+    except ValueError as error:
+        return render_template('admin/dashboard.html', metrics={}, recent_shipments=[], error=str(error)), 400
     except (OperationalError, DatabaseError):
         db.session.rollback()
-        logger.exception("Database error loading dashboard overview")
-        return render_template(
-            "admin/dashboard.html",
-            metrics={},
-            recent_shipments=[],
-            error="The database overview is unavailable right now. You can still open your workspace tools.",
-        )
+        logger.exception('Database error loading dashboard overview')
+        return render_template('admin/dashboard.html', metrics={}, recent_shipments=[], error='The database overview is unavailable right now. You can still open your workspace tools.')
 
 
 @admin_bp.route("/admin/generate-backup", methods=["GET"])

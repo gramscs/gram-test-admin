@@ -32,10 +32,14 @@ def upgrade_consignment_fields(engine):
 
 def upgrade_admin_fields(engine):
     """Create master tables and add fields without replacing legacy records."""
-    from app.models import Company, CompanyLocation
+    from app.models import Company, CompanyLocation, MisReport, MisView
     Company.__table__.create(engine, checkfirst=True)
     CompanyLocation.__table__.create(engine, checkfirst=True)
     added = upgrade_consignment_fields(engine)
+    for model in (MisView, MisReport):
+        if not inspect(engine).has_table(model.__tablename__):
+            model.__table__.create(engine, checkfirst=True)
+            added.append(model.__tablename__ + ' table')
     with engine.begin() as connection:
         inspector = inspect(connection)
         if inspector.has_table("lead"):

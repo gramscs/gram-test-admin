@@ -75,7 +75,10 @@ the same SQLite database to display these records. On Windows PowerShell, set
 ## What is included
 
 - A shared green/charcoal design, Space Grotesk typography, and responsive navigation.
-- Dashboard totals from your database, recent shipments, and shortcuts to each tool.
+- Management dashboard with pickup trends, status mix, client/route rankings,
+  document watchlists, date/client/status filters and presentation mode.
+- MIS reports in Excel, PDF and CSV, with configurable columns, saved reporting
+  views, immutable report history, private downloads, names/notes and deletion.
 - Light and dark themes across every admin screen, including login.
 - Shipment creation, editing, deletion, searching, sorting, and pagination.
 - PDF/image POD and invoice uploads inside the shipment form, previews, downloads,
@@ -94,7 +97,7 @@ the same SQLite database to display these records. On Windows PowerShell, set
 app/
   __init__.py                  Standalone application setup and health checks
   admin/                      Original admin routes and business logic
-  models.py                   Shipment and client tables; legacy enquiry/subscriber records
+  models.py                   Shipment/client/MIS tables; retained legacy records
   db_maintenance.py           Optional PostgreSQL schema repair helper
   templates/admin/            Admin screen HTML and shared theme components
   static/js/consignments.js    Shipment screen behavior
@@ -322,7 +325,7 @@ Inside the ZIP:
 
 Local inventory covers `instance/uploads/`. Supabase inventory covers the
 `consignments/` namespace used by the admin uploader in configured/referenced
-buckets, plus every file directly referenced by shipment records. It does not
+buckets, plus every file directly referenced by shipments or saved MIS reports. It does not
 export unrelated website buckets/tables or environment credentials.
 
 Missing files or failed storage listings make the filename end in
@@ -356,7 +359,7 @@ admin login, and downloads disable content sniffing and caching. This is file
 validation, not antivirus scanning. For Supabase storage, use a **private bucket**
 and keep the storage key on the server; a public bucket has its own access rules.
 
-The sidebar groups **Overview**, **Shipment operations**, **Master data**, and
+The sidebar groups **Reporting**, **Shipment operations**, **Master data**, and
 **Data & account**. Labels use a compact print-settings panel with normal page
 scrolling; on tablets and phones, settings appear before the shipment list.
 [View the updated label settings](docs/screenshots/labels-settings.png).
@@ -373,3 +376,80 @@ Labels always print on a white background with black text, irrespective of the
 admin theme. The destination address and PIN receive priority; shipment totals
 are clearly marked so they are not mistaken for per-piece weights/volumes.
 Fonts are embedded for consistent printing. [View a sample three-piece label PDF](docs/b2b-label-example.pdf).
+
+
+## Management dashboard and MIS
+
+The dashboard uses saved shipment data, with locally bundled interactive SVG
+charts and the existing light/dark themes. **Present** opens a clean presentation
+layout; click **Exit presentation** or press Escape to return. Trend points and
+status segments show exact values on hover/focus, and the pickup chart includes
+an expandable data table.
+
+Use **Pickup-date period**, **Client** and **Current status** to select a view.
+Periods include all time, the last 7/30 days, this month/quarter and custom dates.
+Archived clients remain available for historical reporting. Click a client in
+**Volume by client** to filter the dashboard to that client. Dashboard downloads
+use the same applied filters.
+
+Reporting definitions:
+
+- Delivery metrics show **current status for the selected pickup-date cohort**.
+  The app does not record actual delivery timestamps, so reports do not calculate
+  on-time delivery or actual delivery trends.
+- **Past expected date** counts open shipments whose estimated drop date (or ETA
+  fallback) is before today in IST. This is an estimate-based attention flag.
+- Date filters use pickup dates. All time includes undated records; date ranges
+  exclude them and show the number excluded. Undated records never appear in the
+  pickup trend. Supported dates include ISO dates/timestamps and DD/MM/YYYY or
+  DD-MM-YYYY. Charts aggregate daily, monthly or yearly to fit the date span.
+- Missing POD counts delivered shipments without a POD reference; missing
+  invoices counts all selected shipments without an invoice reference. These
+  indicators do not verify that an attached file can still be retrieved.
+- Chargeable totals include recorded, valid, non-negative measurements only.
+  Weight/volume coverage shows how many shipments have a value. Invalid legacy
+  measurements are flagged and excluded; blank measurements are not estimates.
+
+Open **MIS Reports** to manage reports:
+
+1. Choose filters and the columns for your shipment register.
+2. Enter a report/view name, optional notes and a download format.
+3. **Generate & save report** stores a snapshot and starts its download. The
+   success message provides a download link and **Refresh report history**.
+4. **Save as new view** keeps the filters, columns and format for reuse. Load a
+   saved view to change it, then **Update loaded view**. Relative periods refresh
+   when loaded/generated. Deleting a view leaves generated reports intact.
+5. History keeps the original generated files, even if shipment data changes.
+   Download again, edit the display name/notes, or delete a report and its file.
+   Deleting reports does not change shipment records. History is paginated.
+
+**Excel** includes editable charts, summary/coverage metrics, current status,
+pickup trend, client and route breakdowns, attention flags and the full filtered
+shipment register with your chosen columns. **CSV** contains the full selected
+register. Spreadsheet text is protected against formula execution.
+
+**PDF** is a landscape management summary with vector charts, metrics and
+coverage, the top 15 clients/routes, and the first 50 attention records in shipment
+record order. Use Excel or CSV for the complete detail register. Reports show
+pickup-date filters and generation time in IST.
+
+Complete backups include the `mis_view` and `mis_report` tables. Generated MIS
+files are linked to their history rows in `mis_reports/`, with checksums and
+missing-file reporting, alongside the other uploaded documents.
+
+After updating an existing installation, run the following against your intended
+database (keep the configured DATABASE_URL), then restart the app:
+
+```bash
+python -m flask --app wsgi:app upgrade-db
+python -m flask --app wsgi:app check-db
+```
+
+This additive upgrade creates `mis_view` and `mis_report`; it preserves existing
+shipments, companies, documents and retained legacy records. No new dependency or
+external chart service is required.
+
+Preview using sample data: [Management dashboard](docs/screenshots/dashboard-light.png)
+· [Dark dashboard](docs/screenshots/dashboard-dark.png)
+· [MIS reports](docs/screenshots/mis-reports-dark.png)
+· [Example management PDF](docs/management-mis-example.pdf).

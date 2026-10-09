@@ -189,8 +189,10 @@ def _workbook(payload, report, table_columns):
         columns = list(table_columns[key])
         if key == 'consignments':
             columns = ['backup_order'] + columns + ['pod_backup_path', 'pod_backup_status', 'invoice_backup_path', 'invoice_backup_status']
+        if key == 'mis_report':
+            columns += ['file_backup_path', 'file_backup_status']
         _sheet(workbook, key, columns, rows)
-    columns = ['backup_order', 'consignment_id', 'consignment_number', 'kind', 'source', 'original_name', 'status', 'archive_path', 'bytes', 'sha256', 'message']
+    columns = ['backup_order', 'consignment_id', 'consignment_number', 'mis_report_id', 'kind', 'source', 'original_name', 'status', 'archive_path', 'bytes', 'sha256', 'message']
     _sheet(workbook, 'document_report', columns, report['documents'])
     _sheet(workbook, 'inventory_errors', ['source', 'bucket', 'namespace', 'message'], report['inventory_errors'])
     return workbook
@@ -217,6 +219,14 @@ def build_complete_backup(payload):
                                           consignment_number=row['consignment_number'], kind=kind, source='shipment', original_name=name if value else None)
                     row[kind + '_backup_path'] = entry['archive_path']
                     row[kind + '_backup_status'] = entry['status']
+            for row in payload.get('mis_report', []):
+                value = row.get('file_ref')
+                if value:
+                    referenced.add(_reference_key(value))
+                name = row.get('file_name') or Path(value or 'report').name
+                path = f"mis_reports/{row['id']:06d}_" + _safe_name(name)
+                entry = _add_document(archive, report, value, path, mis_report_id=row['id'], kind='mis_report', source='report', original_name=name)
+                row['file_backup_path'], row['file_backup_status'] = entry['archive_path'], entry['status']
             for index, (value, source) in enumerate(_inventory(referenced, report), start=1):
                 path = f'other_uploads/{index:06d}_' + _safe_name(Path(value).name)
                 _add_document(archive, report, value, path, source=source, kind='unlinked_upload', original_name=Path(value).name)
@@ -241,7 +251,8 @@ File retrieval issues: {sum(counts.get(key, 0) for key in ('missing', 'unavailab
 Upload listing issues: {len(report['inventory_errors'])}
 
 All admin database tables and columns are in data.json and admin-data.xlsx,
-including company masters, saved locations, shipments and retained legacy records.
+including company masters, saved locations, shipments, MIS views/report history
+and retained legacy records. Saved MIS files are in mis_reports/.
 JSON is the authoritative full-data copy; Excel is for browsing the records.
 
 Consignment folders start with the same backup_order number as the consignment
