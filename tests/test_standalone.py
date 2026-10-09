@@ -18,7 +18,7 @@ def save(client, number="TEST001", **fields):
     return client.get("/admin/consignments/list", query_string={"search": number}).get_json()["rows"][0]
 
 
-@pytest.mark.parametrize("path", ["/", "/admin", "/admin/dashboard", "/admin/consignments", "/admin/leads"])
+@pytest.mark.parametrize("path", ["/", "/admin", "/admin/dashboard", "/admin/consignments", "/admin/companies"])
 def test_pages_require_login(client, path):
     response = client.get(path, follow_redirects=True)
     assert response.status_code == 200
@@ -41,8 +41,8 @@ def test_invalid_login_and_logout(client, admin_client):
 
 @pytest.mark.parametrize("path,expected", [
     ("/admin/dashboard", b"Download Backup"),
-    ("/admin/consignments", b"Internal Consignment Sheet"),
-    ("/admin/leads", b"Customer Leads"),
+    ("/admin/consignments", b"Shipment Tracker"),
+    ("/admin/companies", b"Companies"),
 ])
 def test_admin_pages_render_without_public_website(admin_client, path, expected):
     response = admin_client.get(path)
@@ -58,7 +58,7 @@ def test_all_browser_assets_are_bundled(client):
         "css/font-awesome.min.css", "fonts/fontawesome-webfont.woff2", "images/logo.png",
         "js/consignments.js", "js/admin/api.js", "js/admin/state.js", "js/admin/validation.js",
         "js/admin/theme.js", "css/admin-theme.css", "css/admin-consignments.css",
-        "js/admin/ui.js", "js/admin/company-presets.js", "js/admin/companies.js", "js/admin/leads.js", "js/admin/labels.js",
+        "js/admin/ui.js", "js/admin/company-presets.js", "js/admin/companies.js", "js/admin/documents.js", "js/admin/labels.js",
     ]:
         response = client.get("/static/" + filename)
         assert response.status_code == 200, filename
@@ -87,10 +87,11 @@ def test_delivery_proof_save_download_and_remove(admin_client, app):
     image = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZQAAAABJRU5ErkJggg==")
     row = save(admin_client, pod_file_data="data:image/png;base64," + base64.b64encode(image).decode(), pod_file_name="proof.png", pod_file_type="image/png")
     pod_path = Path(app.instance_path) / "uploads" / row["pod_image"]
-    assert pod_path.read_bytes() == image
+    from PIL import Image
+    assert Image.open(pod_path).size == (1, 1)
     response = admin_client.get(f"/admin/consignments/{row['id']}/pod")
     assert response.status_code == 200
-    assert response.data == image
+    assert Image.open(io.BytesIO(response.data)).size == (1, 1)
     response = admin_client.delete(f"/admin/consignments/{row['id']}/pod")
     assert response.get_json()["success"]
     assert not pod_path.exists()
@@ -127,24 +128,21 @@ def test_archive_option_and_endpoint_are_removed(admin_client, app):
         assert Consignment.query.count() == 1
 
 
-def test_leads_panel_rejection_and_json_backup(admin_client, app):
+def test_removed_leads_preserves_legacy_data_in_backup(admin_client, app):
     with app.app_context():
         db.session.add_all([
-            Lead(name="Valid enquiry", email="valid@example.com", phone="1234567890", message="Hello"),
-            Lead(name="Missing phone", email="blank@example.com", phone="", message="Hello"),
+            Lead(name="Legacy enquiry", email="valid@example.com", phone="1234567890", message="Hello"),
             NewsletterSubscriber(email="subscriber@example.com"),
         ])
         db.session.commit()
-    response = admin_client.get("/admin/leads")
-    assert b"Valid enquiry" in response.data
-    response = admin_client.post("/admin/leads/reject-empty-phone", follow_redirects=True)
-    assert response.status_code == 200
-    assert b"Missing phone" not in response.data
-    with app.app_context():
-        assert Lead.query.count() == 1
+    for path in ('/admin/leads', '/admin/leads/export.xlsx'):
+        assert admin_client.get(path).status_code == 404
+    for path in ('/admin/leads', '/admin/leads/bulk', '/admin/leads/email-preview', '/admin/leads/email-draft', '/admin/leads/reject-empty-phone'):
+        assert admin_client.post(path, json={}).status_code == 404
+    assert admin_client.put('/admin/leads/1', json={}).status_code == 404
     payload = admin_client.get("/admin/generate-backup").get_json()
     assert payload["metadata"]["table_counts"]["leads"] == 1
-    assert payload["leads"][0]["name"] == "Valid enquiry"
+    assert payload["leads"][0]["name"] == "Legacy enquiry"
     assert payload["newsletter_subscribers"][0]["email"] == "subscriber@example.com"
 
 

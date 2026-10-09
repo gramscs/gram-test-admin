@@ -4,13 +4,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var addRowButton = document.getElementById("add-row-btn");
     var editModal = new bootstrap.Modal(document.getElementById("editConsignmentModal"));
     var modalSaveBtn = document.getElementById("modal-save-btn");
-    var modalPodFile = document.getElementById("modal-pod-file");
-    var modalPodPreview = document.getElementById("modal-pod-preview-container");
-    var modalPodRemoveBtn = document.getElementById("modal-pod-remove");
-    var modalPodView = document.getElementById("modal-pod-view");
-    var podViewerModalEl = document.getElementById("podViewerModal");
-    var podViewerModal = podViewerModalEl ? new bootstrap.Modal(podViewerModalEl) : null;
-    var podViewerContent = document.getElementById("pod-viewer-content");
     var searchInput = document.getElementById("search-input");
     var perPageSelect = document.getElementById("per-page-select");
     var clearFiltersBtn = document.getElementById("clear-filters-btn");
@@ -34,9 +27,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var currentSortOrder = "asc";
     var totalRows = 0;
     var totalPages = 1;
-    var stagedPodUpload = null;
-    var pendingPodUploadPromise = null;
-    var podUploadSequence = 0;
     var statusTimeoutId = null;
 
     function buildStatusSelect(value) {
@@ -109,10 +99,7 @@ document.addEventListener("DOMContentLoaded", function () {
             drop_tag: tr.querySelector('.drop_tag') ? tr.querySelector('.drop_tag').value.trim() : (baseRow.drop_tag || ''),
             drop_date: tr.querySelector('.drop_date') ? tr.querySelector('.drop_date').value.trim() : (baseRow.drop_date || ''),
             eta: tr.querySelector('.eta') ? tr.querySelector('.eta').value.trim() : (baseRow.eta || ''),
-            pod_image: tr.dataset.podImage || baseRow.pod_image || null,
-            pod_file_name: tr.dataset.podFileName || baseRow.pod_file_name || null,
-            pod_file_type: tr.dataset.podFileType || baseRow.pod_file_type || null,
-            pod_file_data: tr.dataset.podFileData || baseRow.pod_file_data || null
+
         });
         tr.dataset.row = JSON.stringify(row);
         return row;
@@ -172,31 +159,11 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("modal-drop-tag").value = row.drop_tag || "";
         document.getElementById("modal-drop-date").value = row.drop_date || "";
         window.companyPresets.setRow(row);
-        // POD preview and controls
-        try {
-            if (row.pod_image) {
-                modalPodPreview.innerHTML = '<span class="text-success">POD uploaded.</span>';
-                modalPodView.style.display = '';
-                modalPodView.dataset.id = row.id || '';
-                modalPodView.dataset.pod = encodeURIComponent(row.pod_image || '');
-            } else if (row.pod_file_name) {
-                modalPodPreview.innerHTML = '<span class="text-info">POD ready: ' + escapeHtml(row.pod_file_name) + '</span>';
-                modalPodView.style.display = '';
-                modalPodView.dataset.id = row.id || '';
-                modalPodView.dataset.pod = encodeURIComponent(row.pod_file_data || '');
-            } else {
-                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                modalPodView.style.display = 'none';
-                modalPodView.dataset.id = '';
-                modalPodView.dataset.pod = '';
-            }
-        } catch (e) {
-            // ignore if modal controls missing
-        }
+        window.shipmentDocuments.setRow(row);
     }
 
     function clearModal() {
-        resetPodUploadStaging();
+        window.shipmentDocuments.reset();
         populateModal({
             consignment_number: "",
             status: "",
@@ -214,75 +181,6 @@ document.addEventListener("DOMContentLoaded", function () {
             pod_file_type: null,
             pod_file_data: null
         });
-    }
-
-    function resetPodUploadStaging() {
-        podUploadSequence += 1;
-        stagedPodUpload = null;
-        pendingPodUploadPromise = null;
-        if (modalPodFile) {
-            modalPodFile.value = "";
-        }
-    }
-
-    function stagePodUpload(file) {
-        if (!file) {
-            resetPodUploadStaging();
-            return null;
-        }
-
-        if (!/^image\//.test(file.type || '')) {
-            resetPodUploadStaging();
-            return null;
-        }
-
-        var currentSequence = ++podUploadSequence;
-        stagedPodUpload = null;
-
-        pendingPodUploadPromise = new Promise(function (resolve, reject) {
-            var reader = new FileReader();
-
-            reader.onload = function () {
-                if (currentSequence !== podUploadSequence) {
-                    resolve(null);
-                    return;
-                }
-
-                stagedPodUpload = {
-                    name: file.name,
-                    type: file.type,
-                    dataUrl: String(reader.result || ""),
-                    file: file,
-                };
-                resolve(stagedPodUpload);
-            };
-
-            reader.onerror = function () {
-                if (currentSequence !== podUploadSequence) {
-                    resolve(null);
-                    return;
-                }
-
-                reject(new Error("Could not read the selected POD file."));
-            };
-
-            reader.readAsDataURL(file);
-        });
-
-        return pendingPodUploadPromise;
-    }
-
-    async function ensurePodUploadReady() {
-        if (!pendingPodUploadPromise) {
-            return stagedPodUpload;
-        }
-
-        var promise = pendingPodUploadPromise;
-        await promise;
-        if (promise === pendingPodUploadPromise) {
-            pendingPodUploadPromise = null;
-        }
-        return stagedPodUpload;
     }
 
     function buildRowData(source, fallbackId) {
@@ -304,6 +202,14 @@ document.addEventListener("DOMContentLoaded", function () {
             drop_date: data.drop_date || "",
             eta: data.eta || "",
             pod_image: data.pod_image || null,
+            pod_original_name: data.pod_original_name || null,
+            pod_remove: !!data.pod_remove,
+            invoice_file: data.invoice_file || null,
+            invoice_original_name: data.invoice_original_name || null,
+            invoice_file_name: data.invoice_file_name || null,
+            invoice_file_type: data.invoice_file_type || null,
+            invoice_file_data: data.invoice_file_data || null,
+            invoice_remove: !!data.invoice_remove,
             pod_file_name: data.pod_file_name || null,
             pod_file_type: data.pod_file_type || null,
             pod_file_data: data.pod_file_data || null
@@ -327,20 +233,9 @@ document.addEventListener("DOMContentLoaded", function () {
         tr.dataset.id = source.id || "";
         tr.dataset.consignmentNumber = source.consignment_number || "";
         tr.dataset.row = JSON.stringify(source);
-        tr.dataset.podImage = source.pod_image || "";
-        tr.dataset.podFileName = source.pod_file_name || "";
-        tr.dataset.podFileType = source.pod_file_type || "";
-        tr.dataset.podFileData = source.pod_file_data || "";
         tr.dataset.isLocal = isLocal ? "true" : "false";
 
         var rowClass = isLocal ? 'table-info' : '';
-
-        var podCellHtml = "<span class=\"text-muted small\">—</span>";
-        if (source.pod_image) {
-            podCellHtml = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
-        } else if (source.pod_file_name) {
-            podCellHtml = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
-        }
 
         tr.innerHTML =
             '<td><div class="cell-stack">' + buildIdentifierSelect(source.identifier_type) +
@@ -354,7 +249,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 buildTextInput("pickup_date", source.pickup_date || "", "Pickup date") + '</div></td>' +
             '<td><div class="cell-stack">' + buildTextInput("drop_pincode", source.drop_pincode || "", "Drop pin", 6) +
                 buildTextInput("drop_date", source.drop_date || source.eta || "", "Drop estimated") + '</div></td>' +
-            '<td class="text-center pod-cell">' + podCellHtml + '</td>' +
             '<td><div class="d-flex justify-content-center gap-1"><button type="button" class="btn btn-sm btn-outline-primary edit-row" title="Edit" aria-label="Edit consignment"><i class="fa fa-pencil" aria-hidden="true"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-danger delete-row" title="Delete" aria-label="Delete consignment"><i class="fa fa-times" aria-hidden="true"></i></button></div></td>';
 
@@ -387,20 +281,13 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         Array.prototype.forEach.call(tr.querySelectorAll('input, select'), function (field) {
-            field.addEventListener('input', function () { syncRowDataset(tr); });
-            field.addEventListener('change', function () { syncRowDataset(tr); });
+            field.addEventListener('input', function () { adminState.rememberRow(syncRowDataset(tr)); });
+            field.addEventListener('change', function () { adminState.rememberRow(syncRowDataset(tr)); });
         });
 
         tableBody.appendChild(tr);
         syncRowDataset(tr);
 
-        // attach view-pod listener if present
-        var viewBtn = tr.querySelector('.view-pod');
-        if (viewBtn) {
-            viewBtn.addEventListener('click', function () {
-                openPodViewer(getRowDataFromTr(tr));
-            });
-        }
     }
 
     function updateRowFromModal(tr, source) {
@@ -438,9 +325,7 @@ document.addEventListener("DOMContentLoaded", function () {
         source.drop_pincode = adminValidation.normalizePincode(dropPincode);
         source.drop_tag = document.getElementById("modal-drop-tag").value.trim();
         source.drop_date = document.getElementById("modal-drop-date").value.trim();
-        source.pod_file_name = stagedPodUpload ? stagedPodUpload.name : (source.pod_file_name || null);
-        source.pod_file_type = stagedPodUpload ? stagedPodUpload.type : (source.pod_file_type || null);
-        source.pod_file_data = stagedPodUpload ? stagedPodUpload.dataUrl : (source.pod_file_data || null);
+        window.shipmentDocuments.apply(source);
 
         if (tr) {
             ['identifier_type', 'pieces', 'chargeable_weight', 'chargeable_volume'].forEach(function (name) {
@@ -463,29 +348,7 @@ document.addEventListener("DOMContentLoaded", function () {
             var dropDateInput = tr.querySelector('.drop_date');
             if (dropDateInput) dropDateInput.value = source.drop_date || source.eta || "";
 
-            // Find POD by role so regrouping table columns cannot overwrite a field.
-            try {
-                var podCell = tr.querySelector('.pod-cell');
-                if (podCell) {
-                    if (source.pod_image || source.pod_file_data) {
-                        podCell.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
-                        var vp = podCell.querySelector('.view-pod');
-                        if (vp) {
-                            vp.addEventListener('click', function () {
-                                openPodViewer(getRowDataFromTr(tr));
-                            });
-                        }
-                    } else {
-                        podCell.innerHTML = '<span class="text-muted small">—</span>';
-                    }
-                }
-            } catch (e) {}
-
-            // Track modification
-            var rowId = tr.dataset.id ? Number(tr.dataset.id) : null;
-            if (rowId && rowId > 0) {
-                adminState.addModified(rowId);
-            }
+            adminState.rememberRow(source);
         }
 
         return true;
@@ -512,6 +375,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         var rawRows = collectRows();
+        adminState.pendingRows.forEach(function (row, id) {
+            if (!adminState.deletedIds.has(id) && !rawRows.some(item => item.id === id)) rawRows.push(row);
+        });
         // Include staged local rows that may not be present in DOM (user hasn't navigated to last page)
         try {
             var staged = (adminState && adminState.locallyAddedRows) ? adminState.locallyAddedRows : [];
@@ -636,7 +502,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // Add fetched rows
             data.rows.forEach(function (row) {
-                addRow(row, false);
+                if (!adminState.deletedIds.has(row.id)) addRow(adminState.pendingRows.get(row.id) || row, false);
             });
 
             // Include locally staged rows in totals (but only render them when showing the last page)
@@ -773,9 +639,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Event Listeners
     modalSaveBtn.addEventListener("click", async function () {
         try {
-            await ensurePodUploadReady();
+            await window.shipmentDocuments.ready();
         } catch (error) {
-            showStatus("<strong>POD upload could not be read.</strong> " + escapeHtml(error.message || "Please select the file again."), "danger");
+            showStatus("<strong>Check the selected documents.</strong> " + escapeHtml(error.message || "Please select the file again."), "danger");
             return;
         }
 
@@ -785,10 +651,6 @@ document.addEventListener("DOMContentLoaded", function () {
             if (updateRowFromModal(null, newSource)) {
                 // Stage row in admin state and show it immediately if possible.
                 adminState.pushLocalRow(newSource);
-
-                // Clear any staged POD upload buffer from the modal
-                stagedPodUpload = null;
-                try { if (modalPodFile) modalPodFile.value = ""; } catch (e) {}
 
                 // Update totals and pagination UI
                 totalRows = (typeof totalRows === "number" ? totalRows : 0) + 1;
@@ -840,109 +702,6 @@ document.addEventListener("DOMContentLoaded", function () {
         isCreatingRow = false;
         clearModal();
     });
-
-    // POD chooser: stage selected image silently until the modal Save button is clicked.
-    if (modalPodFile) {
-        modalPodFile.addEventListener('change', function () {
-            var file = modalPodFile.files && modalPodFile.files[0];
-            stagePodUpload(file);
-        });
-    }
-
-    if (modalPodRemoveBtn) {
-        modalPodRemoveBtn.addEventListener('click', async function () {
-            if (!currentEditingRow) {
-                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                modalPodView.style.display = 'none';
-                return;
-            }
-
-            // Read the current row data to determine whether the POD exists on the server.
-            var rowData = getRowDataFromTr(currentEditingRow) || {};
-            var rowId = Number(currentEditingRow.dataset.id) || null;
-            var hasPodPayload = !!(rowData.pod_image || rowData.pod_file_data || rowData.pod_file_name);
-
-            if (!rowId || rowId <= 0) {
-                if (hasPodPayload) {
-                    resetPodUploadStaging();
-                    try {
-                        rowData.pod_file_data = null;
-                        rowData.pod_file_name = null;
-                        rowData.pod_file_type = null;
-                        currentEditingRow.dataset.row = JSON.stringify(rowData);
-                    } catch (e) {}
-                    modalPodFile.value = '';
-                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                    modalPodView.style.display = 'none';
-                    showStatus('Cleared staged POD (not yet saved).', 'info');
-                } else {
-                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                    modalPodView.style.display = 'none';
-                }
-                return;
-            }
-
-            if (!hasPodPayload) {
-                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                modalPodView.style.display = 'none';
-                return;
-            }
-
-            if (!confirm('Remove POD for this consignment? This will delete the file.')) return;
-
-            try {
-                var data = await adminAPI.deletePod(rowId);
-                if (!data || !data.success) throw new Error((data && data.message) || 'Delete failed');
-
-                // Update UI
-                try {
-                    resetPodUploadStaging();
-                    var tr = currentEditingRow;
-                    var rowData = getRowDataFromTr(tr);
-                    rowData.pod_image = null;
-                    rowData.pod_file_name = null;
-                    rowData.pod_file_type = null;
-                    rowData.pod_file_data = null;
-                    tr.dataset.row = JSON.stringify(rowData);
-                    tr.dataset.podImage = '';
-                    tr.dataset.podFileName = '';
-                    tr.dataset.podFileType = '';
-                    tr.dataset.podFileData = '';
-                    var podCell = tr.querySelector('.pod-cell');
-                    if (podCell) podCell.innerHTML = '<span class="text-muted small">—</span>';
-                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                    modalPodView.style.display = 'none';
-                    try { modalPodView.dataset.id = ''; modalPodView.dataset.pod = ''; } catch (e) {}
-                    showStatus('POD removed.', 'success');
-                } catch (e) {}
-
-            } catch (err) {
-                showStatus('Failed to remove POD: ' + (err.message || ''), 'danger');
-            }
-        });
-    }
-
-    // Open POD viewer when modal's 'View POD' button clicked
-    if (modalPodView) {
-        modalPodView.addEventListener('click', function () {
-            openPodViewer(currentEditingRow ? getRowDataFromTr(currentEditingRow) : null);
-        });
-    }
-
-    function openPodViewer(rowData) {
-        if (!podViewerModal || !podViewerContent) return;
-        rowData = rowData || {};
-        var podPath = rowData.pod_image || rowData.pod_file_data || '';
-        if (!podPath) {
-            podViewerContent.innerHTML = '<div class="text-center text-muted">No POD available.</div>';
-            podViewerModal.show();
-            return;
-        }
-
-        var imageSource = rowData.pod_image ? '/admin/consignments/' + rowData.id + '/pod' : podPath;
-        podViewerContent.innerHTML = '<img src="' + imageSource + '" style="max-width:100%;max-height:75vh;height:auto;display:block;margin:0 auto;" />';
-        podViewerModal.show();
-    }
 
     saveButton.addEventListener("click", saveSheet);
 

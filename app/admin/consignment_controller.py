@@ -1,17 +1,14 @@
 """Admin consignment management routes and helpers."""
 
-import base64
-import binascii
 from decimal import Decimal, InvalidOperation
 import io
 import logging
 import os
 import re
-from uuid import uuid4
+from pathlib import Path
 
 from flask import current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
-from werkzeug.utils import secure_filename
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
 from sqlalchemy import or_
@@ -21,9 +18,10 @@ from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
 from app.models import Company, Consignment, db
+from app.admin.documents import prepare_row_documents, store_document_changes, cleanup_documents
 
 logger = logging.getLogger(__name__)
-MAX_POD_IMAGE_BYTES = 5 * 1024 * 1024
+
 
 
 def _get_supabase_client():
@@ -55,11 +53,14 @@ def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
             payload = bytes(payload)
         if not isinstance(payload, (bytes, bytearray)):
             raise TypeError("POD upload payload must be bytes-like.")
-        supa.storage.from_(bucket).upload(
-            object_path,
-            payload,
-            {"content-type": content_type or "application/octet-stream"},
-        )
+        try:
+            supa.storage.from_(bucket).upload(object_path, payload, {"content-type": content_type or "application/octet-stream"})
+        except Exception:
+            try:
+                supa.storage.from_(bucket).remove([object_path])
+            except Exception:
+                logger.exception("Failed to clean incomplete document upload")
+            raise
         return f"supabase:{bucket}/{object_path}"
 
     payload = file_bytes
@@ -73,8 +74,15 @@ def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
     upload_folder = os.path.join(current_app.instance_path, "uploads")
     os.makedirs(upload_folder, exist_ok=True)
     dest_path = os.path.join(upload_folder, filename)
-    with open(dest_path, "wb") as handle:
-        handle.write(payload)
+    opened = False
+    try:
+        with open(dest_path, "xb") as handle:
+            opened = True
+            handle.write(payload)
+    except Exception:
+        if opened and os.path.isfile(dest_path):
+            os.remove(dest_path)
+        raise
     return filename
 
 
@@ -157,7 +165,7 @@ def _download_legacy_supabase_pod_file(consignment_id, pod_value):
     upload_folder = os.path.join(current_app.instance_path, 'uploads')
     try:
         legacy_path = os.path.normpath(os.path.join(upload_folder, pod_value))
-        if legacy_path.startswith(os.path.abspath(upload_folder)) and os.path.exists(legacy_path):
+        if Path(legacy_path).resolve().is_relative_to(Path(upload_folder).resolve()) and os.path.isfile(legacy_path):
             with open(legacy_path, 'rb') as fh:
                 return fh.read(), bucket, pod_value
     except Exception:
@@ -184,7 +192,7 @@ def _delete_pod_file(pod_value):
 
     upload_folder = os.path.join(current_app.instance_path, "uploads")
     pod_path = os.path.normpath(os.path.join(upload_folder, pod_value))
-    if pod_path.startswith(os.path.abspath(upload_folder)) and os.path.exists(pod_path):
+    if Path(pod_path).resolve().is_relative_to(Path(upload_folder).resolve()) and os.path.isfile(pod_path):
         try:
             os.remove(pod_path)
         except Exception:
@@ -223,6 +231,9 @@ def _serialize_consignment(consignment):
         "drop_date": getattr(consignment, "drop_date", None),
         "eta": getattr(consignment, "eta", None),
         "pod_image": getattr(consignment, "pod_image", None),
+        "pod_original_name": consignment.pod_original_name,
+        "invoice_file": consignment.invoice_file,
+        "invoice_original_name": consignment.invoice_original_name,
         "pod_file_name": getattr(consignment, "pod_file_name", None),
         "pod_file_type": getattr(consignment, "pod_file_type", None),
         "pod_file_data": getattr(consignment, "pod_file_data", None),
@@ -535,32 +546,6 @@ def _normalize_shipment_fields(row, existing=None):
     return fields
 
 
-def _decode_pod_data_url(data_url):
-    if not isinstance(data_url, str) or not data_url.strip():
-        return None
-
-    value = data_url.strip()
-    if value.startswith("data:"):
-        header, separator, encoded = value.partition(",")
-        if not separator or ";base64" not in header.lower():
-            raise ValueError("POD upload must be a base64 data URL.")
-    else:
-        encoded = value
-
-    try:
-        return base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise ValueError("POD upload data is invalid.") from exc
-
-
-def _pod_storage_filename(consignment_number, original_name):
-    safe_original = secure_filename(original_name or "pod-upload") or "pod-upload"
-    _, ext = os.path.splitext(safe_original)
-    if not ext:
-        ext = ".bin"
-    return f"{secure_filename(consignment_number) or 'consignment'}-{uuid4().hex}{ext.lower()}"
-
-
 def _apply_consignment_payload(consignment, row):
     for field in CONSIGNMENT_SAVE_FIELDS:
         value = row.get(field)
@@ -569,119 +554,6 @@ def _apply_consignment_payload(consignment, row):
         if isinstance(value, str):
             value = value.strip()
         setattr(consignment, field, value)
-
-
-def _save_pod_upload_for_row(consignment, row, errors, row_index):
-    pod_data = row.get("pod_file_data")
-    if not pod_data:
-        pod_image = (row.get("pod_image") or "").strip() if isinstance(row.get("pod_image"), str) else row.get("pod_image")
-        if _is_external_pod_url(pod_image):
-            errors.append({
-                "index": row_index,
-                "field": "pod_image",
-                "message": "External POD URLs cannot be saved. Upload the POD file instead.",
-            })
-        return
-
-    try:
-        file_bytes = _decode_pod_data_url(pod_data)
-    except ValueError as exc:
-        errors.append({"index": row_index, "field": "pod_file_data", "message": str(exc)})
-        return
-
-    if not file_bytes:
-        return
-
-    if len(file_bytes) > MAX_POD_IMAGE_BYTES:
-        errors.append({
-            "index": row_index,
-            "field": "pod_file_data",
-            "message": "POD upload exceeds the 5 MB size limit.",
-        })
-        return
-
-    if consignment.pod_image:
-        _delete_pod_file(consignment.pod_image)
-
-    filename = _pod_storage_filename(consignment.consignment_number, row.get("pod_file_name"))
-    consignment.pod_image = _store_pod_bytes(filename, file_bytes, row.get("pod_file_type"))
-
-
-@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["POST"], endpoint="consignment_pod_upload")
-@require_admin
-def consignment_pod_upload(consignment_id):
-    consignment = db.session.get(Consignment, consignment_id)
-    if not consignment:
-        return jsonify({"success": False, "message": "Consignment not found."}), 404
-
-    uploaded_file = request.files.get("file")
-    if not uploaded_file:
-        return jsonify({"success": False, "message": "POD file is required."}), 400
-
-    file_bytes = uploaded_file.read()
-    if len(file_bytes) > MAX_POD_IMAGE_BYTES:
-        return jsonify({"success": False, "message": "POD upload exceeds the 5 MB size limit."}), 400
-
-    try:
-        if consignment.pod_image:
-            _delete_pod_file(consignment.pod_image)
-
-        filename = _pod_storage_filename(consignment.consignment_number, uploaded_file.filename)
-        consignment.pod_image = _store_pod_bytes(filename, file_bytes, uploaded_file.mimetype)
-        db.session.commit()
-        return jsonify({"success": True, "pod_image": consignment.pod_image})
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to upload POD for consignment %s", consignment_id)
-        return jsonify({"success": False, "message": "Failed to upload POD."}), 500
-
-
-@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["GET"], endpoint="consignment_pod_download")
-@require_admin
-def consignment_pod_download(consignment_id):
-    consignment = db.session.get(Consignment, consignment_id)
-    if not consignment or not consignment.pod_image:
-        return jsonify({"success": False, "message": "No POD found."}), 404
-
-    pod_path = consignment.pod_image
-    try:
-        if isinstance(pod_path, str) and pod_path.startswith("supabase:"):
-            content_bytes, object_path = _download_supabase_pod_file(pod_path)
-            return send_file(
-                io.BytesIO(content_bytes),
-                as_attachment=True,
-                download_name=os.path.basename(object_path) or "pod.jpg",
-                mimetype="application/octet-stream",
-            )
-
-        upload_folder = os.path.join(current_app.instance_path, "uploads")
-        safe_path = os.path.normpath(os.path.join(upload_folder, pod_path))
-        if not safe_path.startswith(os.path.abspath(upload_folder)):
-            return jsonify({"success": False, "message": "Invalid POD path."}), 400
-        if not os.path.exists(safe_path):
-            return jsonify({"success": False, "message": "POD file missing."}), 404
-        return send_file(safe_path, as_attachment=True, download_name=os.path.basename(safe_path))
-    except Exception:
-        logger.exception("Failed to serve POD for consignment %s", consignment_id)
-        return jsonify({"success": False, "message": "Failed to serve POD."}), 500
-
-
-@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["DELETE"], endpoint="consignment_pod_delete")
-@require_admin
-def consignment_pod_delete(consignment_id):
-    consignment = db.session.get(Consignment, consignment_id)
-    if not consignment:
-        return jsonify({"success": False, "message": "Consignment not found."}), 404
-
-    try:
-        _delete_pod_file(consignment.pod_image)
-        consignment.pod_image = None
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to delete POD for consignment %s", consignment_id)
-        return jsonify({"success": False, "message": "Failed to delete POD."}), 500
 
 
 def _normalize_save_payload():
@@ -713,6 +585,7 @@ def consignments_save():
     errors = []
     saved_count = 0
     deleted_count = 0
+    document_plans, created_files, obsolete_files = [], [], []
 
     try:
         for deleted_id in deleted_ids if isinstance(deleted_ids, list) else []:
@@ -722,7 +595,7 @@ def consignments_save():
                 continue
             consignment = db.session.get(Consignment, deleted_id_int)
             if consignment:
-                _delete_pod_file(consignment.pod_image)
+                obsolete_files.extend(value for value in (consignment.pod_image, consignment.invoice_file) if value)
                 db.session.delete(consignment)
                 deleted_count += 1
 
@@ -769,6 +642,7 @@ def consignments_save():
                 continue
             try:
                 fields = _normalize_shipment_fields(row, consignment)
+                document_changes = prepare_row_documents(row, consignment)
             except ValueError as exc:
                 errors.append({"index": index, "field": "shipment", "message": str(exc)})
                 continue
@@ -776,7 +650,7 @@ def consignments_save():
             for field, value in fields.items():
                 setattr(consignment, field, value)
             db.session.add(consignment)
-            _save_pod_upload_for_row(consignment, row, errors, index)
+            document_plans.append((consignment, document_changes))
             saved_count += 1
 
         if errors:
@@ -787,15 +661,20 @@ def consignments_save():
                 "errors": errors,
             }), 400
 
+        for consignment, changes in document_plans:
+            store_document_changes(consignment, changes, created_files, obsolete_files)
+        total = Consignment.query.count()
         db.session.commit()
+        cleanup_documents(obsolete_files)
         return jsonify({
             "success": True,
             "message": "Saved.",
             "saved_count": saved_count,
             "deleted_count": deleted_count,
-            "total": Consignment.query.count(),
+            "total": total,
         })
     except Exception:
         db.session.rollback()
+        cleanup_documents(created_files)
         logger.exception("Failed to save consignments")
         return jsonify({"success": False, "message": "Failed to save consignments."}), 500

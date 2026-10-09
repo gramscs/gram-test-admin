@@ -66,16 +66,27 @@
           </fieldset>
           {% endfor %}
         </div>
-        <fieldset class="border-top pt-3">
-          <legend class="fs-6 fw-bold">Proof of Delivery (POD)</legend>
-          <div class="mb-2" id="modal-pod-preview-container"><em class="text-muted">No POD uploaded.</em></div>
-          <label for="modal-pod-file" class="visually-hidden">Upload POD image</label>
-          <input type="file" id="modal-pod-file" accept="image/*" class="form-control form-control-sm mb-2" />
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-danger btn-sm" id="modal-pod-remove">Remove POD</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="modal-pod-view" style="display:none;">View POD</button>
+        <section class="border-top pt-3" aria-labelledby="shipment-documents-heading">
+          <h3 class="fs-6 fw-bold" id="shipment-documents-heading">Shipment documents</h3>
+          <p class="small text-muted">PDF, JPG, PNG or WebP · up to 5 MB each. Changes are applied with Save All.</p>
+          <div class="row g-3">
+            {% for kind, title, icon in [('pod', 'Proof of delivery (POD)', 'check-square-o'), ('invoice', 'Invoice', 'file-text-o')] %}
+            <div class="col-md-6"><fieldset class="document-card" data-document="{{ kind }}">
+              <legend class="fs-6"><i class="fa fa-{{ icon }} me-2" aria-hidden="true"></i>{{ title }}</legend>
+              <p class="document-status small text-muted" id="modal-{{ kind }}-status" aria-live="polite">No document attached.</p>
+              <label for="modal-{{ kind }}-file" class="form-label small">Choose {{ 'POD' if kind == 'pod' else 'invoice' }}</label>
+              <input type="file" id="modal-{{ kind }}-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="form-control form-control-sm" aria-describedby="modal-{{ kind }}-error" />
+              <p id="modal-{{ kind }}-error" class="text-danger small mt-2 mb-0" role="alert"></p>
+              <img class="document-image d-none" id="modal-{{ kind }}-image" alt="{{ title }} preview" />
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="modal-{{ kind }}-download"><i class="fa fa-download me-1" aria-hidden="true"></i>Download</button>
+                <button type="button" class="btn btn-outline-danger btn-sm d-none" id="modal-{{ kind }}-remove">Remove</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="modal-{{ kind }}-undo">Undo change</button>
+              </div>
+            </fieldset></div>
+            {% endfor %}
           </div>
-        </fieldset>
+        </section>
       </div>
       <div class="modal-footer">
         <span class="small text-muted me-auto">Save stages your edits. Save All updates the database.</span>
@@ -104,17 +115,5 @@
         <button type="submit" class="btn btn-primary">Import Excel</button>
       </div>
     </form>
-  </div>
-</div>
-
-<div class="modal fade" id="podViewerModal" tabindex="-1" aria-labelledby="podViewerLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="podViewerLabel">Proof of Delivery</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="pod-viewer-content" style="min-height:300px;"></div>
-    </div>
   </div>
 </div>

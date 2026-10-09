@@ -10,8 +10,10 @@ def test_dashboard_overview_counts_saved_shipments_and_shows_latest_five(app, ad
     response = admin_client.get('/admin/dashboard')
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    for name, count in [('total', 6), ('in_transit', 2), ('delivered', 1), ('leads', 1)]:
+    for name, count in [('total', 6), ('in_transit', 2), ('delivered', 1), ('out_for_delivery', 1)]:
         assert f'data-metric="{name}">{count}</div>' in html
+    assert '/admin/leads' not in html
+    assert 'Customer leads' not in html
     assert 'OVERVIEW0' not in html
     for index in range(1, 6):
         assert f'OVERVIEW{index}' in html

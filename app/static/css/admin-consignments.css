@@ -7,7 +7,6 @@
 #sheet-table .chargeable-column { min-width: 140px; }
 #sheet-table .status-column { min-width: 160px; }
 #sheet-table .route-column { min-width: 145px; }
-#sheet-table .pod-column { min-width: 65px; }
 #sheet-table .actions-column { min-width: 85px; }
 .cell-stack { display: flex; flex-direction: column; gap: .4rem; }
 .unit-field { display: flex; align-items: center; gap: .35rem; margin: 0; }

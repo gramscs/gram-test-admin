@@ -59,7 +59,6 @@
             <th scope="col" class="status-column">{{ sort_button('status', 'Status') }}</th>
             <th scope="col" class="route-column">{{ sort_button('pickup_tag', 'Pickup Tag') }}{{ sort_button('pickup_date', 'Pickup Date') }}</th>
             <th scope="col" class="route-column">{{ sort_button('drop_pincode', 'Drop Pin') }}{{ sort_button('drop_date', 'Drop Estimated') }}</th>
-            <th scope="col" class="text-center pod-column"><abbr title="Proof of delivery">POD</abbr></th>
             <th scope="col" class="text-center actions-column">Actions</th>
           </tr>
         </thead>
@@ -91,7 +90,7 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/admin/company-presets.js') }}"></script>
-{% for script in ['admin/api.js', 'admin/state.js', 'admin/validation.js', 'consignments.js'] %}
+{% for script in ['admin/api.js', 'admin/state.js', 'admin/validation.js', 'admin/documents.js', 'consignments.js'] %}
 <script src="{{ url_for('static', filename='js/' ~ script) }}"></script>
 {% endfor %}
 {% endblock %}

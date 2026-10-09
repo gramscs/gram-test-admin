@@ -46,6 +46,9 @@ class Consignment(db.Model):
     eta_debug_json = db.Column(db.Text)
     # URL or internal path to the Proof-Of-Delivery (POD) image/file
     pod_image = db.Column(db.String(1024))
+    pod_original_name = db.Column(db.String(255))
+    invoice_file = db.Column(db.String(1024))
+    invoice_original_name = db.Column(db.String(255))
 
 
 class Lead(db.Model):

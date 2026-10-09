@@ -113,12 +113,12 @@ def test_old_sqlite_database_upgrades_without_losing_records(app, tmp_path):
     path = tmp_path / "legacy.db"
     engine = create_engine(f"sqlite:///{path}")
     metadata = MetaData()
-    new_fields = {"identifier_type", "pieces", "chargeable_weight", "chargeable_volume"}
+    new_fields = {"identifier_type", "pieces", "chargeable_weight", "chargeable_volume", "company_id", "pod_original_name", "invoice_file", "invoice_original_name"}
     columns = [Column(column.name, String(16) if column.name == "consignment_number" else column.type, primary_key=column.primary_key) for column in Consignment.__table__.columns if column.name not in new_fields]
     old = Table("consignment", metadata, *columns)
     metadata.create_all(engine)
     with engine.begin() as connection:
-        connection.execute(old.insert().values(id=1, consignment_number="KEEP001", status="Delivered", pickup_address="Keep existing address"))
+        connection.execute(old.insert().values(id=1, consignment_number="KEEP001", status="Delivered", pickup_address="Keep existing address", pod_image="legacy-proof.png"))
     engine.dispose()
     upgraded = create_app({"INSTANCE_PATH": str(tmp_path / "legacy-instance"), "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}", "AUTO_CREATE_TABLES": True, "RATELIMIT_ENABLED": False})
     with upgraded.app_context():
@@ -126,6 +126,8 @@ def test_old_sqlite_database_upgrades_without_losing_records(app, tmp_path):
         assert row.consignment_number == "KEEP001" and row.pickup_address == "Keep existing address"
         assert row.identifier_type == "LRN" and row.pieces == 1
         assert row.chargeable_weight is None
+        assert row.pod_image == "legacy-proof.png"
+        assert row.pod_original_name is None and row.invoice_file is None and row.invoice_original_name is None
     for _ in range(2):
         assert upgraded.test_cli_runner().invoke(args=["upgrade-db"]).exit_code == 0
     with upgraded.app_context():

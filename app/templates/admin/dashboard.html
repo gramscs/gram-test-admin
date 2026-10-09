@@ -7,7 +7,7 @@
   <div>
     <span class="page-eyebrow">YOUR OPERATIONS, AT A GLANCE</span>
     <h1>Welcome back!<br />Let's keep things moving.</h1>
-    <p>Your shipments, customer enquiries and shipping labels. Everything you need for the day, in one place.</p>
+    <p>Your shipments, client companies and shipping labels. Everything you need for the day, in one place.</p>
     <a href="{{ url_for('admin.consignments_panel') }}" class="btn btn-primary">Manage consignments <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></a>
   </div>
   <div class="hero-art" aria-hidden="true">
@@ -23,7 +23,7 @@
 </section>
 {% if error %}<div class="alert alert-warning" role="alert">{{ error }}</div>{% endif %}
 <div class="row g-3">
-  {% for key, label, icon, caption in [('total', 'Total consignments', 'cubes', 'All saved shipments'), ('in_transit', 'In transit', 'truck', 'Status: In Transit'), ('delivered', 'Delivered', 'check-circle', 'Completed deliveries'), ('leads', 'Customer leads', 'users', 'Saved customer enquiries')] %}
+  {% for key, label, icon, caption in [('total', 'Total consignments', 'cubes', 'All saved shipments'), ('in_transit', 'In transit', 'truck', 'Status: In Transit'), ('delivered', 'Delivered', 'check-circle', 'Completed deliveries'), ('out_for_delivery', 'Out for delivery', 'map-marker', 'On the final delivery leg')] %}
   <div class="col-6 col-xl-3">
     <div class="surface-panel metric-card">
       <div class="metric-top"><span>{{ label }}</span><span class="metric-icon"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span></div>
@@ -35,7 +35,7 @@
 </div>
 <div class="section-heading"><h2>Your workspace</h2><span class="text-muted small">Pick up where you left off</span></div>
 <div class="row g-3 mb-4">
-  {% for endpoint, icon, tone, title, description, action in [('consignments_panel', 'truck', 'green', 'Consignment Sheet', 'Add shipments, update their details and keep your records organized.', 'Open consignments'), ('labels_panel', 'barcode', 'blue', 'B2B Labels', 'Turn saved shipments into print-ready labels, one for every piece.', 'Create shipping labels'), ('leads_panel', 'users', 'orange', 'Leads Panel', 'Find contact details and review enquiries from your customers.', 'View customer leads')] %}
+  {% for endpoint, icon, tone, title, description, action in [('consignments_panel', 'truck', 'green', 'Consignment Sheet', 'Add shipments, update their details and keep your records organized.', 'Open consignments'), ('labels_panel', 'barcode', 'blue', 'B2B Labels', 'Turn saved shipments into print-ready labels, one for every piece.', 'Create shipping labels'), ('companies_panel', 'building-o', 'orange', 'Client Companies', 'Save client addresses and regular pickup/drop locations for faster shipment entry.', 'Manage clients')] %}
   <div class="col-md-4"><a href="{{ url_for('admin.' ~ endpoint) }}" class="surface-panel workspace-card">
     <span class="workspace-icon tone-{{ tone }}"><i class="fa fa-{{ icon }}" aria-hidden="true"></i></span>
     <h3>{{ title }}</h3><p>{{ description }}</p><span class="workspace-cta">{{ action }}<i class="fa fa-arrow-right" aria-hidden="true"></i></span>
@@ -58,7 +58,7 @@
   </div>
 </section>
 <section class="surface-panel backup-panel">
-  <div class="d-flex align-items-center gap-3"><span class="metric-icon"><i class="fa fa-database" aria-hidden="true"></i></span><div><h2>Database Backup</h2><p>Download your consignments, leads and subscribers as a JSON file.</p></div></div>
+  <div class="d-flex align-items-center gap-3"><span class="metric-icon"><i class="fa fa-database" aria-hidden="true"></i></span><div><h2>Database Backup</h2><p>Download shipment records, client masters and document references as JSON.</p></div></div>
   <a href="{{ url_for('admin.generate_backup') }}" class="btn btn-outline-secondary"><i class="fa fa-download me-2" aria-hidden="true"></i>Download Backup</a>
 </section>
 {% endblock %}

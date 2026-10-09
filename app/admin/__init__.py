@@ -8,4 +8,4 @@ from app.admin import routes  # noqa: E402,F401
 from app.admin import consignment_controller  # noqa: E402,F401
 from app.admin import labels  # noqa: E402,F401
 from app.admin import companies  # noqa: E402,F401
-from app.admin import crm  # noqa: E402,F401
+from app.admin import documents  # noqa: E402,F401

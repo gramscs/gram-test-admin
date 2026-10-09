@@ -1,4 +1,4 @@
-"""Validation shared by company masters and enquiry editing."""
+"""Validation shared by company master editing."""
 
 import re
 from flask import request

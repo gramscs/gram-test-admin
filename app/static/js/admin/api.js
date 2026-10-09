@@ -71,17 +71,9 @@
     });
   }
 
-  function deletePod(rowId) {
-    var url = '/admin/consignments/' + encodeURIComponent(rowId) + '/pod';
-    return _fetchJson(url, { method: 'DELETE', headers: { 'Accept': 'application/json' } }).catch(function (err) {
-      return { success: false, status: err.status || 500, message: err.message || 'Request failed', body: err.body || null };
-    });
-  }
-
   // Expose
   window.adminAPI = {
     fetchList: fetchList,
-    saveRows: saveRows,
-    deletePod: deletePod
+    saveRows: saveRows
   };
 })();

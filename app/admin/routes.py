@@ -1,12 +1,12 @@
-"""Admin dashboard and lead-management routes."""
+"""Shipment dashboard and database backup routes."""
 
 import io
 import json
 import logging
 from datetime import UTC, datetime
 
-from flask import flash, jsonify, render_template, redirect, send_file, session, url_for
-from sqlalchemy import func, or_
+from flask import jsonify, render_template, send_file, session
+from sqlalchemy import func
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app import limiter
@@ -30,7 +30,7 @@ def dashboard():
             "total": sum(status_counts.values()),
             "in_transit": status_counts.get("In Transit", 0),
             "delivered": status_counts.get("Delivered", 0),
-            "leads": Lead.query.count(),
+            "out_for_delivery": status_counts.get("Out for Delivery", 0),
         }
         recent_shipments = Consignment.query.order_by(Consignment.id.desc()).limit(5).all()
         return render_template("admin/dashboard.html", metrics=metrics, recent_shipments=recent_shipments)
@@ -108,22 +108,3 @@ def generate_backup():
     except Exception as exc:
         logger.error("Admin backup generation failed for %s: %s", admin_user, exc, exc_info=True)
         return jsonify({"success": False, "message": "Failed to generate backup."}), 500
-
-
-@admin_bp.route("/admin/leads/reject-empty-phone", methods=["POST"])
-@require_admin
-def reject_empty_phone_leads():
-    try:
-        deleted_count = (
-            Lead.query.filter(
-                or_(Lead.phone.is_(None), func.trim(Lead.phone) == "")
-            ).delete(synchronize_session=False)
-        )
-        db.session.commit()
-        flash(f"Rejected {deleted_count} lead(s) with empty phone numbers.", "success")
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to reject blank-phone leads")
-        flash("Unable to reject blank-phone leads right now.", "error")
-
-    return redirect(url_for("admin.leads_panel"))

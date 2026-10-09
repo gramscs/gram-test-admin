@@ -37,6 +37,22 @@ password, generate a hash and put it in `ADMIN_PASSWORD_HASH` in `.env`:
 python -c "from getpass import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass('New admin password: ')))"
 ```
 
+## Update an existing installation
+
+Stop the running Flask server, activate your virtual environment, then run:
+
+```bash
+git pull origin standalone-admin
+python -m pip install -r requirements.txt
+python -m flask --app wsgi:app upgrade-db
+python -m flask --app wsgi:app check-db
+python run.py
+```
+
+The document validator requires the updated dependencies. The schema upgrade
+adds document fields and preserves existing records; restart before opening
+the new pages. Use your normal production restart command on a hosted app.
+
 ## Add dummy data locally
 
 With your virtual environment activated, run from this repository:
@@ -45,11 +61,8 @@ With your virtual environment activated, run from this repository:
 DATABASE_URL=sqlite:///instance/admin.db python -m flask --app wsgi:app seed-demo
 ```
 
-This adds **25 sample shipments**, **5 customer enquiries**, and **3 newsletter
-subscribers**. The shipments include all four delivery statuses, addresses,
-PIN codes, and dates. The enquiries appear in the Leads panel; subscribers
-appear in the JSON backup.
-
+This adds **25 sample shipments**, including all four delivery statuses,
+addresses, PIN codes, and dates. It only seeds shipment data.
 Refresh the admin pages after running it. Existing records are preserved,
 and running the command again does not duplicate the demo records. The command
 only works in local SQLite development and does not seed Supabase.
@@ -65,13 +78,12 @@ the same SQLite database to display these records. On Windows PowerShell, set
 - Dashboard totals from your database, recent shipments, and shortcuts to each tool.
 - Light and dark themes across every admin screen, including login.
 - Shipment creation, editing, deletion, searching, sorting, and pagination.
-- Delivery-proof image upload, viewing, downloading, and removal.
+- PDF/image POD and invoice uploads inside the shipment form, previews, downloads,
+  staged removal, and file-content validation.
 - Excel import, Excel export, import-template download, and the original PDF button.
-- Enquiry CRM: create/edit, statuses, follow-up dates, internal notes, filters,
-  sorting, selection, bulk updates/deletion, Excel export, and email-app drafts.
 - Client company masters with multiple pickup/drop presets and editable shipment snapshots.
 - B2B piece labels with optional Code 128 barcodes and PDF preview.
-- JSON backup for shipments, enquiries, subscribers, companies, and saved locations.
+- JSON backup for shipments, companies, saved locations, and preserved legacy data.
 - Local Bootstrap, icon fonts, interface fonts, scripts, and logo. The interface
   does not need a CDN or the public website to load.
 
@@ -81,7 +93,7 @@ the same SQLite database to display these records. On Windows PowerShell, set
 app/
   __init__.py                  Standalone application setup and health checks
   admin/                      Original admin routes and business logic
-  models.py                   Shipment, enquiry, and subscriber database tables
+  models.py                   Shipment and client tables; legacy enquiry/subscriber records
   db_maintenance.py           Optional PostgreSQL schema repair helper
   templates/admin/            Admin screen HTML and shared theme components
   static/js/consignments.js    Shipment screen behavior
@@ -109,14 +121,14 @@ a choice, the app follows your device theme. The toggle still works if browser
 storage is blocked, although the preference cannot be remembered after reload.
 
 The dashboard shows saved consignment totals, exact **In Transit** and
-**Delivered** status counts, customer lead totals, and the five most recently
+**Delivered** and **Out for Delivery** status counts, and the five most recently
 added shipments. These are database values, not sample analytics. On small
 screens, use the menu button beside the logo to open navigation.
 
 ## Database and delivery-proof files
 
 By default, this app creates a **new, empty** SQLite database at
-`instance/admin.db` and stores uploaded delivery proofs in `instance/uploads/`.
+`instance/admin.db` and stores uploaded PODs and invoices in `instance/uploads/`.
 It does not include your original database, enquiries, uploads, passwords, or
 test records.
 
@@ -124,11 +136,10 @@ To work with the same records as your website, set `DATABASE_URL` to the same
 database connection in `.env`. PostgreSQL connections use
 `postgresql://user:password@host:5432/database`.
 
-The standalone app displays existing enquiries; it does not include the
-public enquiry form. The website can keep writing enquiries to a shared
-database, and this app can read them.
-
-For shared Supabase delivery-proof storage, configure `SUPABASE_URL`,
+This admin app is dedicated to shipment tracking. Leads pages, editing routes,
+and email tools have been removed. Existing enquiry/subscriber records remain
+in the database and legacy JSON backup so the change does not discard data.
+For shared Supabase shipment-document storage, configure `SUPABASE_URL`,
 `SUPABASE_KEY`, and `SUPABASE_BUCKET`. If the website stores proofs on its
 local disk, a shared database alone does not share those files: copy/mount
 the uploads into this app's `instance/uploads/`, or configure the common
@@ -163,7 +174,7 @@ python -m flask --app wsgi:app repair-consignment-schema
    python -m flask --app wsgi:app check-db
    ```
 
-`SUPABASE_URL` and `SUPABASE_KEY` are for delivery-proof file storage; they
+`SUPABASE_URL` and `SUPABASE_KEY` are for shipment-document file storage; they
 do not replace the PostgreSQL database connection string. No Supabase API key
 is required for the database connection.
 
@@ -192,7 +203,7 @@ The sheet groups identifier type/number, chargeable weight/volume, pickup
 tag/date, and drop pincode/date together. Every displayed field can still be
 edited directly, and each sortable field has its own header button. Use
 **Import / Export** for the Excel import dialog, import template, and Excel/PDF
-exports. The add/edit form groups shipment, pickup, drop, and POD details;
+exports. The add/edit form groups shipment, pickup, drop, and document details;
 its footer stays visible while you scroll.
 
 Each shipment has an identifier type (LRN, Order ID, or AWB), an identifier of
@@ -209,8 +220,8 @@ python -m flask --app wsgi:app upgrade-db
 python -m flask --app wsgi:app check-db
 ```
 
-The upgrade adds shipment and CRM columns, creates company/location master
-tables, and allows longer identifiers without deleting records. It does not require copying or replacing the database.
+The upgrade adds shipment/document columns, creates company/location master
+tables, retains legacy enquiry columns, and allows longer identifiers without deleting records. It does not require copying or replacing the database.
 
 Open **B2B Labels** in the sidebar, select saved shipments, and download a
 4×6-inch PDF. The PDF has one page per piece with the identifier, Code 128
@@ -250,16 +261,16 @@ python -m pytest -q
 ```
 
 Tests use temporary databases and uploads. They cover login protection, admin
-screens, shipment editing, delivery proofs, Excel import/export, shipping labels,
-enquiries, backups, startup, and database persistence.
+screens, shipment editing, PDF/image PODs and invoices, content validation and
+failed-save recovery, Excel import/export, labels, backups, startup, and persistence.
 
 ## Behavior retained from the original
 
 - The original PDF export currently produces a PDF with the title
   “Consignments Export”; it does not print shipment rows. Excel export includes
   records.
-- JSON backups contain database records and delivery-proof references, not the
-  delivery-proof files themselves. No backup-restore interface is included.
+- JSON backups contain database records and POD/invoice references, not the
+  document files themselves. No backup-restore interface is included.
 
 The public website link on the login screen now points to this application's
 home route. The admin business logic, models, and JavaScript were copied from
@@ -285,29 +296,31 @@ client. Editing an archived company also lets you mark it active again. Excel
 exports include `company_id` and `client_company`; the import template accepts
 an optional `company_id` from a master in this database.
 
-## Enquiry CRM and email drafts
+## POD and invoice documents
 
-**Leads → Add Enquiry** captures a contact, company, subject, and customer
-message. **Edit** also lets you set New / Contacted / Qualified / Won / Closed,
-an internal note, and a follow-up date. Customer messages expand in the table.
-Received timestamps display in IST; timestamps in exports remain ISO values.
+Open a shipment with **Add Row** or **Edit**. The **Shipment documents** section
+contains separate POD and invoice cards. Both accept **PDF, JPG, PNG and WebP**,
+up to **5 MB per file**. Neither document appears as a table column. Image
+previews appear in the form; PDFs use **Download** instead of an embedded viewer.
 
-Search, status filters, and sorting help find records. Select rows for bulk
-status updates, deletion, or Excel export. Selection applies to the current
-page. **Data tools** also exports all filtered results and retains the optional
-blank-phone cleanup action. Deletions require an explicit confirmation.
+Choose, replace, remove or undo a document change in the form, then click
+**Save → Save All**. **Cancel** discards the form's changes. Files already saved
+are retained until the database save succeeds. Staged changes survive shipment
+filtering/pagination. Download buttons work for saved and selected documents.
 
-Use a row's envelope button or **Email selected**. Enter any recipient (up to
-ten comma-separated addresses), review/edit the subject and message, then
-**Open email app**. Your browser needs a configured `mailto:` handler; you
-review and send from your own account. The admin app never sends these emails
-and needs no SMTP credentials. Internal notes, status, and follow-up dates are
-excluded unless **Include internal notes** is checked.
+The server detects the file contents independently of the browser MIME type.
+Images are decoded/re-encoded without metadata, limited to one image and
+16 megapixels. PDFs must be readable, unencrypted and 1–200 pages; files with
+scripts, automatic actions or embedded attachments are rejected. SVG and other
+file formats are rejected. Stored names are generated, document requests require
+admin login, and downloads disable content sniffing and caching. This is file
+validation, not antivirus scanning. For Supabase storage, use a **private bucket**
+and keep the storage key on the server; a public bucket has its own access rules.
 
-Long drafts cannot fit reliably in an email-app link. **Download complete
-draft** saves the full message as an unsent `.eml` file, including recipients
-and subject, for opening/importing in an email app. The draft endpoint also
-supports short messages. Up to 50 enquiries can be combined in one draft.
+The sidebar groups **Overview**, **Shipment operations**, **Master data**, and
+**Data & account**. Labels use a compact print-settings panel with normal page
+scrolling; on tablets and phones, settings appear before the shipment list.
+[View the updated label settings](docs/screenshots/labels-settings.png).
 
 ## Label barcode choice
 

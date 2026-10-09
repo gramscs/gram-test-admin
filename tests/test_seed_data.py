@@ -5,21 +5,21 @@ from app.models import Consignment, Lead, NewsletterSubscriber, db
 def test_seed_demo_is_repeatable_and_visible_in_admin(app, admin_client):
     result = app.test_cli_runner().invoke(args=["seed-demo"])
     assert result.exit_code == 0, result.output
-    assert "Added 25 demo shipments, 5 enquiries, and 3 newsletter subscribers" in result.output
+    assert "Added 25 demo shipments." in result.output
     response = admin_client.get("/admin/consignments/list", query_string={"search": "DEMO", "per_page": 100})
     assert response.status_code == 200
     assert response.get_json()["total"] == 25
     rows = response.get_json()["rows"]
     assert {row["status"] for row in rows} == {"Pickup Scheduled", "In Transit", "Out for Delivery", "Delivered"}
     assert all(row["pickup_address"] and row["drop_address"] for row in rows)
-    assert b"Demo Customer 1" in admin_client.get("/admin/leads").data
+    assert admin_client.get("/admin/leads").status_code == 404
     repeated = app.test_cli_runner().invoke(args=["seed-demo"])
     assert repeated.exit_code == 0
-    assert "Added 0 demo shipments, 0 enquiries, and 0 newsletter subscribers" in repeated.output
+    assert "Added 0 demo shipments." in repeated.output
     with app.app_context():
         assert Consignment.query.count() == 25
-        assert Lead.query.count() == 5
-        assert NewsletterSubscriber.query.count() == 3
+        assert Lead.query.count() == 0
+        assert NewsletterSubscriber.query.count() == 0
 
 
 def test_seed_demo_preserves_existing_records(app):
