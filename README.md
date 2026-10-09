@@ -162,6 +162,11 @@ Python process for PostgreSQL authentication.
 
 ## Shipment fields and B2B labels
 
+Click **Add Row** to open the Add Consignment modal. Fill in the shipment details
+and click **Save** to stage the completed row in the table. Click **Save All**
+to write staged changes to the database. Cancelling the modal adds no row.
+The row's Edit button opens the same form for existing shipment details.
+
 Each shipment has an identifier type (LRN, Order ID, or AWB), an identifier of
 up to 64 characters, a number of pieces, chargeable weight in kg, and chargeable
 volume in m³. Weight/volume accept non-negative values with up to three decimal

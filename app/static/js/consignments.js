@@ -362,6 +362,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (editButton) {
             editButton.addEventListener("click", function () {
                 isCreatingRow = false;
+                document.getElementById('editConsignmentLabel').textContent = 'Edit Consignment';
                 currentEditingRow = tr;
                 populateModal(getRowDataFromTr(tr));
                 editModal.show();
@@ -815,21 +816,15 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     addRowButton.addEventListener("click", function () {
-        isCreatingRow = false;
         currentEditingRow = null;
-        var newId = adminState.nextLocalId();
-        var newRow = buildRowData({}, newId);
-        addRow(newRow, true);
-        adminState.pushLocalRow(newRow);
-        totalRows = (typeof totalRows === "number" ? totalRows : 0) + 1;
-        totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
-        updatePaginationUI();
-        try {
-            var firstNewInput = tableBody.querySelector('tr:last-child .consignment_number');
-            if (firstNewInput) {
-                firstNewInput.focus();
-            }
-        } catch (e) {}
+        isCreatingRow = true;
+        clearModal();
+        document.getElementById('editConsignmentLabel').textContent = 'Add Consignment';
+        editModal.show();
+    });
+
+    document.getElementById("editConsignmentModal").addEventListener("shown.bs.modal", function () {
+        document.getElementById("modal-consignment-number").focus();
     });
 
     document.getElementById("editConsignmentModal").addEventListener("hidden.bs.modal", function () {
