@@ -153,6 +153,9 @@ def test_health_and_init_db_command(client, app):
     result = app.test_cli_runner().invoke(args=["init-db"])
     assert result.exit_code == 0
     assert "Database tables created" in result.output
+    checked = app.test_cli_runner().invoke(args=["check-db"])
+    assert checked.exit_code == 0
+    assert "All required admin tables and columns are present" in checked.output
 
 
 def test_database_persists_between_app_instances(admin_client, app):
@@ -178,3 +181,58 @@ def test_production_requires_configuration(app, monkeypatch, tmp_path, missing):
     monkeypatch.delenv(missing)
     with pytest.raises(RuntimeError, match=missing):
         create_app({"INSTANCE_PATH": str(tmp_path / "production-instance")})
+
+
+@pytest.mark.parametrize("scheme", ["postgres", "postgresql"])
+def test_supabase_configuration_without_connecting(app, monkeypatch, tmp_path, scheme):
+    monkeypatch.setenv("DATABASE_URL", f"{scheme}://postgres.example:dummy@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    monkeypatch.delenv("AUTO_CREATE_TABLES", raising=False)
+    application = create_app({"INSTANCE_PATH": str(tmp_path / "supabase-instance")})
+    from sqlalchemy.engine import make_url
+    uri = make_url(application.config["SQLALCHEMY_DATABASE_URI"])
+    assert uri.get_backend_name() == "postgresql"
+    assert uri.query["sslmode"] == "require"
+    assert not application.config["AUTO_CREATE_TABLES"]
+    assert application.config["SQLALCHEMY_ENGINE_OPTIONS"]["connect_args"]["connect_timeout"] == 10
+    assert application.config["SQLALCHEMY_ENGINE_OPTIONS"]["pool_pre_ping"]
+    with application.app_context():
+        db.engine.dispose()
+
+
+def test_supabase_preserves_certificate_verification_settings(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:dummy@db.example.supabase.co:5432/postgres?sslmode=verify-full&sslrootcert=/tmp/test-root.crt")
+    monkeypatch.delenv("AUTO_CREATE_TABLES", raising=False)
+    application = create_app({"INSTANCE_PATH": str(tmp_path / "ssl-instance")})
+    from sqlalchemy.engine import make_url
+    query = make_url(application.config["SQLALCHEMY_DATABASE_URI"]).query
+    assert query["sslmode"] == "verify-full"
+    assert query["sslrootcert"] == "/tmp/test-root.crt"
+    with application.app_context():
+        db.engine.dispose()
+
+
+def test_supabase_rejects_unfilled_password_placeholder(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.example:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    with pytest.raises(RuntimeError, match="password placeholder"):
+        create_app({"INSTANCE_PATH": str(tmp_path / "placeholder-instance")})
+
+
+def test_check_db_reports_missing_structure_without_creating_it(app):
+    with app.app_context():
+        NewsletterSubscriber.__table__.drop(db.engine)
+    result = app.test_cli_runner().invoke(args=["check-db"])
+    assert result.exit_code == 1
+    assert "table newsletter_subscriber" in result.output
+    from sqlalchemy import inspect
+    with app.app_context():
+        assert not inspect(db.engine).has_table("newsletter_subscriber")
+
+
+def test_check_db_does_not_expose_connection_errors(app, monkeypatch):
+    def connection_failure(*args, **kwargs):
+        raise RuntimeError("fake-sensitive-connection-detail")
+    monkeypatch.setattr(db.session, "execute", connection_failure)
+    result = app.test_cli_runner().invoke(args=["check-db"])
+    assert result.exit_code == 1
+    assert "Database connection failed" in result.output
+    assert "fake-sensitive-connection-detail" not in result.output

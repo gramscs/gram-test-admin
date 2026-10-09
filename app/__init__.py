@@ -36,6 +36,14 @@ def create_app(test_config=None):
         raise RuntimeError("Set DATABASE_URL before starting in production.")
     database_url = database_url or f"sqlite:///{instance_path / 'admin.db'}"
     url = make_url(overrides.get("SQLALCHEMY_DATABASE_URI", database_url))
+    is_postgres = url.get_backend_name() == "postgresql"
+    if is_postgres and url.password == "[YOUR-PASSWORD]":
+        raise RuntimeError("Replace the password placeholder in DATABASE_URL through your secure environment settings.")
+    is_supabase = bool(url.host) and (
+        url.host.endswith(".supabase.co") or url.host.endswith(".pooler.supabase.com")
+    )
+    if is_postgres and is_supabase and "sslmode" not in url.query:
+        url = url.update_query_dict({"sslmode": "require"})
     if url.get_backend_name() == "sqlite" and url.database not in (None, "", ":memory:"):
         database_path = Path(url.database)
         if not database_path.is_absolute():
@@ -54,8 +62,17 @@ def create_app(test_config=None):
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI") or os.getenv("REDIS_URL") or "memory://",
         RATELIMIT_HEADERS_ENABLED=True,
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
-        AUTO_CREATE_TABLES=os.getenv("AUTO_CREATE_TABLES", "false" if production else "true").lower() == "true",
+        AUTO_CREATE_TABLES=os.getenv("AUTO_CREATE_TABLES", "false" if production or is_postgres else "true").lower() == "true",
     )
+    if is_postgres:
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "pool_pre_ping": True,
+            "pool_recycle": 180,
+            "pool_size": 3,
+            "max_overflow": 2,
+            "pool_timeout": 30,
+            "connect_args": {"connect_timeout": 10},
+        }
     app.config.update(overrides)
     # Use the normalized URI even when it was supplied through test_config.
     app.config["SQLALCHEMY_DATABASE_URI"] = url.render_as_string(hide_password=False)
@@ -92,6 +109,29 @@ def create_app(test_config=None):
         """Create missing tables; does not import or replace existing records."""
         db.create_all()
         click.echo("Database tables created.")
+
+    @app.cli.command("check-db")
+    def check_db():
+        """Test the connection and required table structure without changing data."""
+        from sqlalchemy import inspect
+        try:
+            db.session.execute(text("SELECT 1"))
+            inspector = inspect(db.engine)
+            missing = []
+            for table in db.metadata.sorted_tables:
+                if not inspector.has_table(table.name):
+                    missing.append(f"table {table.name}")
+                    continue
+                columns = {column["name"] for column in inspector.get_columns(table.name)}
+                missing.extend(f"column {table.name}.{column.name}" for column in table.columns if column.name not in columns)
+        except Exception:
+            db.session.rollback()
+            # Connection errors can contain sensitive connection details.
+            raise click.ClickException("Database connection failed. Check DATABASE_URL, network access, and Supabase project status.") from None
+        click.echo(f"Connected to {db.engine.dialect.name}.")
+        if missing:
+            raise click.ClickException("Missing required database structure: " + ", ".join(missing))
+        click.echo("All required admin tables and columns are present. No data was changed.")
 
     @app.cli.command("repair-consignment-schema")
     def repair_schema():

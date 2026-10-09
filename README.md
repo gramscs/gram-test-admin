@@ -91,7 +91,8 @@ local disk, a shared database alone does not share those files: copy/mount
 the uploads into this app's `instance/uploads/`, or configure the common
 Supabase storage. Back up the `instance/` directory when using local storage.
 
-Table creation runs automatically in development. You can also run it explicitly:
+Table creation runs automatically for local SQLite development. Remote PostgreSQL
+tables are left unchanged by default. You can create missing tables explicitly:
 
 ```bash
 python -m flask --app wsgi:app init-db
@@ -104,6 +105,38 @@ original repair helper is available as an explicit command:
 ```bash
 python -m flask --app wsgi:app repair-consignment-schema
 ```
+
+## Connect to Supabase PostgreSQL
+
+1. Open your Supabase project and click **Connect**.
+2. Select **Session pooler** and copy the PostgreSQL connection URI. The
+   session pooler on port 5432 works with IPv4 hosting environments.
+3. Replace the password placeholder with the database password, URL-encoding
+   special characters. Store the URI securely as `DATABASE_URL` in your
+   hosting/environment settings, or in your ignored local `.env` file.
+4. Restart the app, then run the read-only connection and table check:
+
+   ```bash
+   python -m flask --app wsgi:app check-db
+   ```
+
+`SUPABASE_URL` and `SUPABASE_KEY` are for delivery-proof file storage; they
+do not replace the PostgreSQL database connection string. No Supabase API key
+is required for the database connection.
+
+The app requests encrypted connections for Supabase hosts unless the connection
+URI already specifies an SSL mode. Supplied SSL settings, including `verify-full`
+and a CA certificate path, are preserved. PostgreSQL connections have a 10-second
+connection timeout and check pooled connections before reuse.
+
+`check-db` does not create tables, copy records, or change data. If it reports
+missing tables on a new database, use `init-db`. If you are sharing an existing
+website database, inspect missing fields before using the PostgreSQL repair
+command. Existing data is not automatically migrated from SQLite to Supabase.
+
+Allow outbound access to the exact hostname from your connection URI and port
+5432 in your hosting environment. The credentials must be available to the
+Python process for PostgreSQL authentication.
 
 ## Deploy as an individual app
 
