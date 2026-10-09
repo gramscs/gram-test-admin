@@ -47,7 +47,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "Out for Delivery",
             "Delivered"
         ];
-        var html = '<select class="form-select form-select-sm status">';
+        var html = '<select aria-label="Status" class="form-select form-select-sm status">';
         options.forEach(function (option) {
             var selected = option === (value || "") ? ' selected' : '';
             html += '<option value="' + escapeHtml(option) + '"' + selected + '>' + (option ? escapeHtml(option) : 'Select status') + '</option>';
@@ -59,6 +59,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function buildTextInput(className, value, placeholder, maxlength) {
         var attrs = [
             'class="form-control form-control-sm ' + className + '"',
+            'aria-label="' + escapeHtml(placeholder || className.replaceAll('_', ' ')) + '"',
             'value="' + escapeHtml(value || "") + '"'
         ];
         if (placeholder) {
@@ -340,19 +341,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         tr.innerHTML =
-            "<td>" + buildIdentifierSelect(source.identifier_type) + "</td>" +
-            "<td>" + buildTextInput("consignment_number", source.consignment_number || "", "Identifier", 64) + "</td>" +
+            '<td><div class="cell-stack">' + buildIdentifierSelect(source.identifier_type) +
+                buildTextInput("consignment_number", source.consignment_number || "", "Identifier", 64) + '</div></td>' +
             "<td>" + buildNumberInput('pieces', source.pieces ?? 1, 1, 1) + "</td>" +
-            "<td>" + buildNumberInput('chargeable_weight', source.chargeable_weight ?? '', 0, '0.001') + "</td>" +
-            "<td>" + buildNumberInput('chargeable_volume', source.chargeable_volume ?? '', 0, '0.001') + "</td>" +
+            '<td><div class="cell-stack"><label class="unit-field">' + buildNumberInput('chargeable_weight', source.chargeable_weight ?? '', 0, '0.001') + '<span>kg</span></label>' +
+                '<label class="unit-field">' + buildNumberInput('chargeable_volume', source.chargeable_volume ?? '', 0, '0.001') + '<span>m³</span></label></div></td>' +
             "<td>" + buildStatusSelect(source.status || "") + "</td>" +
-            "<td>" + buildTextInput("pickup_tag", source.pickup_tag || "", "Pickup tag") + "</td>" +
-            "<td>" + buildTextInput("drop_pincode", source.drop_pincode || "", "Drop pin", 6) + "</td>" +
-            "<td>" + buildTextInput("pickup_date", source.pickup_date || "", "Pickup date") + "</td>" +
-            "<td>" + buildTextInput("drop_date", source.drop_date || source.eta || "", "Drop estimated") + "</td>" +
-            "<td class=\"text-center\">" + podCellHtml + "</td>" +
-            "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-primary edit-row\" title=\"Edit\"><i class=\"fa fa-pencil\"></i></button></td>" +
-            "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-row\" title=\"Delete\"><i class=\"fa fa-times\"></i></button></td>";
+            '<td><div class="cell-stack">' + buildTextInput("pickup_tag", source.pickup_tag || "", "Pickup tag") +
+                buildTextInput("pickup_date", source.pickup_date || "", "Pickup date") + '</div></td>' +
+            '<td><div class="cell-stack">' + buildTextInput("drop_pincode", source.drop_pincode || "", "Drop pin", 6) +
+                buildTextInput("drop_date", source.drop_date || source.eta || "", "Drop estimated") + '</div></td>' +
+            '<td class="text-center pod-cell">' + podCellHtml + '</td>' +
+            '<td><div class="d-flex justify-content-center gap-1"><button type="button" class="btn btn-sm btn-outline-primary edit-row" title="Edit" aria-label="Edit consignment"><i class="fa fa-pencil" aria-hidden="true"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger delete-row" title="Delete" aria-label="Delete consignment"><i class="fa fa-times" aria-hidden="true"></i></button></div></td>';
 
         if (rowClass) {
             tr.className = rowClass;
@@ -456,9 +457,9 @@ document.addEventListener("DOMContentLoaded", function () {
             var dropDateInput = tr.querySelector('.drop_date');
             if (dropDateInput) dropDateInput.value = source.drop_date || source.eta || "";
 
-            // update POD cell (cell index 6)
+            // Find POD by role so regrouping table columns cannot overwrite a field.
             try {
-                var podCell = tr.cells[6];
+                var podCell = tr.querySelector('.pod-cell');
                 if (podCell) {
                     if (source.pod_image || source.pod_file_data) {
                         podCell.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
@@ -580,7 +581,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     var totalAfter = (data && typeof data.total === 'number')
                         ? data.total
                         : (totalRows + (adminState.locallyAddedRows ? adminState.locallyAddedRows.length : 0) - (data.deleted_count || 0));
-                    var lastPage = Math.max(1, Math.ceil(totalAfter / currentPerPage));
+                    // The save total covers all rows, while a search may have only one page.
+                    var lastPage = currentSearch ? 1 : Math.max(1, Math.ceil(totalAfter / currentPerPage));
                     loadPage(lastPage, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
                 } catch (e) {
                     loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
@@ -896,7 +898,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     rowData.pod_file_type = null;
                     rowData.pod_file_data = null;
                     tr.dataset.row = JSON.stringify(rowData);
-                    var podCell = tr.cells[6];
+                    tr.dataset.podImage = '';
+                    tr.dataset.podFileName = '';
+                    tr.dataset.podFileType = '';
+                    tr.dataset.podFileData = '';
+                    var podCell = tr.querySelector('.pod-cell');
                     if (podCell) podCell.innerHTML = '<span class="text-muted small">—</span>';
                     modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
                     modalPodView.style.display = 'none';

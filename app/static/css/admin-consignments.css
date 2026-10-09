@@ -1,0 +1,37 @@
+.sheet-search { flex: 1 1 280px; max-width: 560px; }
+#sheet-table th, #sheet-table td { padding: .65rem .5rem; vertical-align: middle; }
+#sheet-table th { font-size: .8rem; color: #4b5563; }
+#sheet-table tbody tr:last-child td { border-bottom: 0; }
+#sheet-table .shipment-column { min-width: 185px; }
+#sheet-table .pieces-column { min-width: 75px; }
+#sheet-table .chargeable-column { min-width: 140px; }
+#sheet-table .status-column { min-width: 160px; }
+#sheet-table .route-column { min-width: 145px; }
+#sheet-table .pod-column { min-width: 65px; }
+#sheet-table .actions-column { min-width: 85px; }
+.cell-stack { display: flex; flex-direction: column; gap: .4rem; }
+.unit-field { display: flex; align-items: center; gap: .35rem; margin: 0; }
+.unit-field input { min-width: 0; }
+.unit-field span { width: 1.8rem; flex-shrink: 0; color: #6b7280; font-size: .75rem; }
+.column-hint { display: block; font-weight: normal; color: #6b7280; font-size: .75rem; margin-top: .2rem; }
+.sort-header { display: block; border: 0; padding: .1rem 0; background: transparent; color: inherit; font: inherit; font-weight: 600; white-space: nowrap; text-align: left; }
+.sort-header:hover { color: #0d6efd; }
+.sort-icon { margin-left: .2rem; opacity: .5; }
+.sort-icon.active { opacity: 1; color: #0d6efd; }
+.pagination-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.pagination-info { color: #6b7280; font-size: .85rem; margin-right: auto; }
+.pagination-buttons { display: flex; gap: .25rem; }
+.pagination-buttons .btn { font-size: .85rem; padding: .25rem .5rem; }
+.page-number { min-width: 2rem; text-align: center; }
+.rows-per-page { width: auto; }
+#editConsignmentModal .form-label { font-size: .85rem; margin-bottom: .35rem; }
+@media (max-width: 767.98px) {
+  .sidebar { position: static; width: 100%; min-height: auto; padding-top: .5rem; }
+  .sidebar .brand { padding-bottom: .5rem; }
+  .sidebar .nav { flex-direction: row !important; flex-wrap: wrap; margin-top: .5rem !important; }
+  .sidebar .nav-link { padding: .5rem .65rem; margin: 0; font-size: .85rem; }
+  .sidebar .nav-item.mt-3 { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+  .topbar, .main-content { margin-left: 0; padding: 1rem; }
+  .pagination-buttons { flex-wrap: wrap; }
+  .consignment-page h4 { font-size: 1.2rem; }
+}
