@@ -38,9 +38,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var pendingPodUploadPromise = null;
     var podUploadSequence = 0;
     var statusTimeoutId = null;
-    var archiveUrl = tableBody.dataset.archiveUrl || "";
-    var archiveDateInput = document.getElementById("archive-date-input");
-    var archiveDeliveredBtn = document.getElementById("archive-delivered-btn");
 
     function buildStatusSelect(value) {
         var options = [
@@ -73,6 +70,15 @@ document.addEventListener("DOMContentLoaded", function () {
         return '<input type="text" ' + attrs.join(' ') + ' />';
     }
 
+    function buildIdentifierSelect(value) {
+        return '<select aria-label="Identifier type" class="form-select form-select-sm identifier_type">' + ['LRN', 'Order ID', 'AWB'].map(function (type) {
+            return '<option' + (type === (value || 'LRN') ? ' selected' : '') + '>' + type + '</option>';
+        }).join('') + '</select>';
+    }
+    function buildNumberInput(name, value, min, step) {
+        return '<input type="number" aria-label="' + name.replaceAll('_', ' ') + '" class="form-control form-control-sm ' + name + '" min="' + min + '" step="' + step + '" value="' + escapeHtml(String(value)) + '" />';
+    }
+
     function syncRowDataset(tr) {
         if (!tr) {
             return null;
@@ -88,6 +94,10 @@ document.addEventListener("DOMContentLoaded", function () {
         var row = Object.assign({}, baseRow, {
             id: tr.dataset.id ? Number(tr.dataset.id) : (baseRow.id || null),
             consignment_number: tr.querySelector('.consignment_number') ? tr.querySelector('.consignment_number').value.trim() : (baseRow.consignment_number || ''),
+            identifier_type: tr.querySelector('.identifier_type') ? tr.querySelector('.identifier_type').value : (baseRow.identifier_type || 'LRN'),
+            pieces: tr.querySelector('.pieces') ? tr.querySelector('.pieces').value : (baseRow.pieces || 1),
+            chargeable_weight: tr.querySelector('.chargeable_weight') ? tr.querySelector('.chargeable_weight').value : (baseRow.chargeable_weight ?? ''),
+            chargeable_volume: tr.querySelector('.chargeable_volume') ? tr.querySelector('.chargeable_volume').value : (baseRow.chargeable_volume ?? ''),
             status: tr.querySelector('.status') ? tr.querySelector('.status').value.trim() : (baseRow.status || ''),
             pickup_address: tr.querySelector('.pickup_address') ? tr.querySelector('.pickup_address').value.trim() : (baseRow.pickup_address || ''),
             pickup_pincode: tr.querySelector('.pickup_pincode') ? tr.querySelector('.pickup_pincode').value.trim() : (baseRow.pickup_pincode || ''),
@@ -141,6 +151,9 @@ document.addEventListener("DOMContentLoaded", function () {
     function populateModal(row) {
         var consInput = document.getElementById("modal-consignment-number");
         consInput.value = row.consignment_number || "";
+        ['identifier_type', 'pieces', 'chargeable_weight', 'chargeable_volume'].forEach(function (name) {
+            document.getElementById('modal-' + name.replaceAll('_', '-')).value = row[name] ?? (name === 'identifier_type' ? 'LRN' : name === 'pieces' ? 1 : '');
+        });
         // Ensure the input is editable (some scripts may toggle readOnly)
         try {
             consInput.readOnly = false;
@@ -275,6 +288,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return {
             id: data.id || fallbackId || null,
             consignment_number: data.consignment_number || "",
+            identifier_type: data.identifier_type || "LRN", pieces: data.pieces ?? 1,
+            chargeable_weight: data.chargeable_weight ?? "", chargeable_volume: data.chargeable_volume ?? "",
             status: data.status || "",
             pickup_address: data.pickup_address || "",
             pickup_pincode: data.pickup_pincode || "",
@@ -325,7 +340,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         tr.innerHTML =
-            "<td>" + buildTextInput("consignment_number", source.consignment_number || "", "Consignment #", 16) + "</td>" +
+            "<td>" + buildIdentifierSelect(source.identifier_type) + "</td>" +
+            "<td>" + buildTextInput("consignment_number", source.consignment_number || "", "Identifier", 64) + "</td>" +
+            "<td>" + buildNumberInput('pieces', source.pieces ?? 1, 1, 1) + "</td>" +
+            "<td>" + buildNumberInput('chargeable_weight', source.chargeable_weight ?? '', 0, '0.001') + "</td>" +
+            "<td>" + buildNumberInput('chargeable_volume', source.chargeable_volume ?? '', 0, '0.001') + "</td>" +
             "<td>" + buildStatusSelect(source.status || "") + "</td>" +
             "<td>" + buildTextInput("pickup_tag", source.pickup_tag || "", "Pickup tag") + "</td>" +
             "<td>" + buildTextInput("drop_pincode", source.drop_pincode || "", "Drop pin", 6) + "</td>" +
@@ -400,6 +419,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         source.consignment_number = consignmentNumber;
+        ['identifier_type', 'pieces', 'chargeable_weight', 'chargeable_volume'].forEach(function (name) {
+            source[name] = document.getElementById('modal-' + name.replaceAll('_', '-')).value;
+        });
         source.status = status;
         source.pickup_address = document.getElementById("modal-pickup-address").value.trim();
         source.pickup_pincode = adminValidation.normalizePincode(pickupPincode);
@@ -414,6 +436,10 @@ document.addEventListener("DOMContentLoaded", function () {
         source.pod_file_data = stagedPodUpload ? stagedPodUpload.dataUrl : (source.pod_file_data || null);
 
         if (tr) {
+            ['identifier_type', 'pieces', 'chargeable_weight', 'chargeable_volume'].forEach(function (name) {
+                var input = tr.querySelector('.' + name);
+                if (input) input.value = source[name];
+            });
             var consignmentInput = tr.querySelector('.consignment_number');
             if (consignmentInput) consignmentInput.value = source.consignment_number || "";
             tr.dataset.consignmentNumber = source.consignment_number || "";
@@ -909,45 +935,6 @@ document.addEventListener("DOMContentLoaded", function () {
         var imageSource = rowData.pod_image ? '/admin/consignments/' + rowData.id + '/pod' : podPath;
         podViewerContent.innerHTML = '<img src="' + imageSource + '" style="max-width:100%;max-height:75vh;height:auto;display:block;margin:0 auto;" />';
         podViewerModal.show();
-    }
-
-    if (archiveDeliveredBtn) {
-      archiveDeliveredBtn.addEventListener("click", async function () {
-        if (!archiveUrl) {
-          showStatus("Archive endpoint is not configured.", "danger");
-          return;
-        }
-
-        var selectedDate = (archiveDateInput && archiveDateInput.value) ? archiveDateInput.value.trim() : "";
-        if (!selectedDate) {
-          showStatus("Please choose a cutoff date before archiving delivered consignments.", "warning");
-          return;
-        }
-
-        if (!confirm('Archive all delivered consignments with drop date before ' + selectedDate + '? This will remove them from the database.')) {
-          return;
-        }
-
-        try {
-          archiveDeliveredBtn.disabled = true;
-          var originalButtonText = archiveDeliveredBtn.textContent;
-          archiveDeliveredBtn.textContent = "Archiving...";
-          showStatus('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Archiving delivered consignments...', "info");
-
-          var data = await adminAPI.archiveDelivered(archiveUrl, { before_date: selectedDate });
-          if (!data || !data.success) {
-            throw new Error((data && data.message) || "Archive request failed.");
-          }
-
-          showStatus("<strong>Archive completed.</strong> Removed " + (data.archived_count || 0) + " delivered consignment(s).", "success");
-          loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
-        } catch (error) {
-          showStatus("<strong>Archive failed.</strong> " + escapeHtml(error.message || "Please try again."), "danger");
-        } finally {
-          archiveDeliveredBtn.disabled = false;
-          archiveDeliveredBtn.textContent = originalButtonText || "Archive Delivered";
-        }
-      });
     }
 
     saveButton.addEventListener("click", saveSheet);

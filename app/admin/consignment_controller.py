@@ -2,7 +2,7 @@
 
 import base64
 import binascii
-from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 import io
 import logging
 import os
@@ -202,28 +202,14 @@ def _normalize_header(value):
     return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
 
 
-def _parse_date_string(value):
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        return None
-
-    value = value.strip()
-    if not value:
-        return None
-
-    try:
-        return datetime.strptime(value[:10], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
 def _serialize_consignment(consignment):
     return {
         "id": getattr(consignment, "id", None),
         "consignment_number": getattr(consignment, "consignment_number", None),
+        "identifier_type": consignment.identifier_type or "LRN",
+        "pieces": consignment.pieces or 1,
+        "chargeable_weight": str(consignment.chargeable_weight) if consignment.chargeable_weight is not None else None,
+        "chargeable_volume": str(consignment.chargeable_volume) if consignment.chargeable_volume is not None else None,
         "status": getattr(consignment, "status", None),
         "pickup_pincode": getattr(consignment, "pickup_pincode", None),
         "pickup_address": getattr(consignment, "pickup_address", None),
@@ -276,7 +262,7 @@ def consignments_list_api():
         sort_order = request.args.get("sort_order", "asc", type=str)
 
         allowed_sort_columns = {
-            "id", "consignment_number", "status", "pickup_pincode", "drop_pincode",
+            "id", "consignment_number", "identifier_type", "pieces", "chargeable_weight", "chargeable_volume", "status", "pickup_pincode", "drop_pincode",
             "pickup_tag", "drop_tag", "pickup_date", "drop_date",
         }
         if sort_by not in allowed_sort_columns:
@@ -290,6 +276,7 @@ def consignments_list_api():
                 or_(
                     Consignment.consignment_number.ilike(pattern),
                     Consignment.status.ilike(pattern),
+                    Consignment.identifier_type.ilike(pattern),
                     Consignment.pickup_tag.ilike(pattern),
                     Consignment.drop_tag.ilike(pattern),
                     Consignment.pickup_pincode.ilike(pattern),
@@ -347,6 +334,7 @@ def consignments_import_template_excel():
         "drop_pincode",
         "drop_tag",
         "drop_date",
+        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume",
     ])
 
     buffer = io.BytesIO()
@@ -358,47 +346,6 @@ def consignments_import_template_excel():
         download_name="consignment_import_template.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
-
-@admin_bp.route("/admin/consignments/archive", methods=["POST"], endpoint="consignments_archive")
-@limiter.limit("10 per minute")
-@require_admin
-def consignments_archive():
-    payload = request.get_json(silent=True) or {}
-    before_date = str(payload.get("before_date") or "").strip()
-
-    if not before_date:
-        return jsonify({"success": False, "message": "Please provide a cutoff date."}), 400
-
-    cutoff_date = _parse_date_string(before_date)
-    if cutoff_date is None:
-        return jsonify({"success": False, "message": "Cutoff date must be a valid date in YYYY-MM-DD format."}), 400
-
-    try:
-        query = Consignment.query.filter(Consignment.status.ilike("Delivered"))
-        query = query.filter(Consignment.drop_date.isnot(None), Consignment.drop_date != "")
-
-        archived_count = 0
-        for consignment in query.all():
-            drop_date = _parse_date_string(getattr(consignment, "drop_date", ""))
-            if drop_date is None:
-                continue
-            if drop_date < cutoff_date:
-                if getattr(consignment, "pod_image", None):
-                    _delete_pod_file(consignment.pod_image)
-                db.session.delete(consignment)
-                archived_count += 1
-
-        db.session.commit()
-        return jsonify({"success": True, "archived_count": archived_count})
-    except (OperationalError, DatabaseError):
-        db.session.rollback()
-        logger.exception("Database error archiving consignments")
-        return jsonify({"success": False, "message": "Unable to archive consignments. Please try again."}), 500
-    except Exception:
-        db.session.rollback()
-        logger.exception("Unexpected error archiving consignments")
-        return jsonify({"success": False, "message": "An unexpected error occurred while archiving consignments."}), 500
 
 
 @admin_bp.route("/admin/consignments/import", methods=["POST"], endpoint="consignments_import_excel")
@@ -445,6 +392,14 @@ def consignments_import_excel():
             drop_date=row_data.get("drop_date"),
         )
 
+        try:
+            fields = _normalize_shipment_fields(row_data)
+            for field, value in fields.items():
+                setattr(consignment, field, value)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Import failed for {consignment_number}: {exc}", "danger")
+            return redirect(url_for("admin.consignments_panel"))
         db.session.add(consignment)
         existing_numbers.add(consignment_number)
         added_count += 1
@@ -475,6 +430,7 @@ def consignments_export_excel():
         "drop_date",
         "pickup_address",
         "drop_address",
+        "identifier_type", "pieces", "chargeable_weight", "chargeable_volume",
     ]
     sheet.append(headers)
 
@@ -489,6 +445,8 @@ def consignments_export_excel():
             getattr(consignment, "drop_date", None),
             getattr(consignment, "pickup_address", None),
             getattr(consignment, "drop_address", None),
+            consignment.identifier_type, consignment.pieces,
+            consignment.chargeable_weight, consignment.chargeable_volume,
         ])
 
     buffer = io.BytesIO()
@@ -527,6 +485,40 @@ CONSIGNMENT_SAVE_FIELDS = (
     "drop_date",
     "eta",
 )
+
+
+def _normalize_shipment_fields(row, existing=None):
+    if "consignment_number" in row:
+        number = str(row["consignment_number"] or "").strip()
+        if not number or len(number) > 64 or not number.isascii() or not all(32 <= ord(char) <= 126 for char in number):
+            raise ValueError("Identifier must contain 1–64 printable ASCII characters.")
+    def value(name, default):
+        return row[name] if name in row else getattr(existing, name, default)
+
+    identifier_type = str(value("identifier_type", "LRN") or "LRN").strip()
+    if identifier_type not in {"LRN", "Order ID", "AWB"}:
+        raise ValueError("Choose LRN, Order ID, or AWB.")
+    raw_pieces = value("pieces", 1)
+    try:
+        pieces = Decimal(str(1 if raw_pieces in (None, "") else raw_pieces))
+        if not pieces.is_finite() or pieces != pieces.to_integral_value() or not 1 <= pieces <= 10000:
+            raise ValueError()
+    except (InvalidOperation, ValueError):
+        raise ValueError("Pieces must be a whole number from 1 to 10000.") from None
+    fields = {"identifier_type": identifier_type, "pieces": int(pieces)}
+    for name in ("chargeable_weight", "chargeable_volume"):
+        raw = value(name, None)
+        if raw in (None, ""):
+            fields[name] = None
+            continue
+        try:
+            number = Decimal(str(raw))
+            if not number.is_finite() or number < 0 or number > Decimal("999999999.999") or number != number.quantize(Decimal("0.001")):
+                raise ValueError()
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"{name.replace('_', ' ').title()} must be non-negative with up to 3 decimal places.") from None
+        fields[name] = number
+    return fields
 
 
 def _decode_pod_data_url(data_url):
@@ -760,7 +752,17 @@ def consignments_save():
                 if not existing_by_number:
                     db.session.add(consignment)
 
+            if len(consignment_number) > 64 or not consignment_number.isascii() or not all(32 <= ord(char) <= 126 for char in consignment_number):
+                errors.append({"index": index, "field": "consignment_number", "message": "Identifier must contain 1–64 printable ASCII characters."})
+                continue
+            try:
+                fields = _normalize_shipment_fields(row, consignment)
+            except ValueError as exc:
+                errors.append({"index": index, "field": "shipment", "message": str(exc)})
+                continue
             _apply_consignment_payload(consignment, row)
+            for field, value in fields.items():
+                setattr(consignment, field, value)
             _save_pod_upload_for_row(consignment, row, errors, index)
             saved_count += 1
 

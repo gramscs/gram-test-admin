@@ -112,6 +112,14 @@ def create_app(test_config=None):
         db.create_all()
         click.echo("Database tables created.")
 
+    @app.cli.command("upgrade-db")
+    def upgrade_db():
+        """Add shipment fields to existing tables without deleting records."""
+        from app.schema_upgrade import upgrade_consignment_fields
+        changed = upgrade_consignment_fields(db.engine)
+        db.create_all()
+        click.echo("Database upgraded. Existing records preserved. " + ("Added: " + ", ".join(changed) if changed else "Schema already current."))
+
     @app.cli.command("check-db")
     def check_db():
         """Test the connection and required table structure without changing data."""
@@ -146,6 +154,9 @@ def create_app(test_config=None):
 
     if app.config["AUTO_CREATE_TABLES"]:
         with app.app_context():
+            if db.engine.dialect.name == "sqlite":
+                from app.schema_upgrade import upgrade_consignment_fields
+                upgrade_consignment_fields(db.engine)
             db.create_all()
 
     return app

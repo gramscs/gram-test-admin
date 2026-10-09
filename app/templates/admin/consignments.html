@@ -66,8 +66,6 @@
       <a href="{{ url_for('admin.consignments_export_pdf') }}" class="btn btn-outline-dark btn-sm">Export PDF</a>
       <button id="add-row-btn" type="button" class="btn btn-outline-primary btn-sm">Add Row</button>
       <button id="save-btn" type="button" class="btn btn-success btn-sm">Save All</button>
-      <input id="archive-date-input" type="date" class="form-control form-control-sm" style="max-width: 180px;" title="Archive delivered consignments before this date" />
-      <button id="archive-delivered-btn" type="button" class="btn btn-warning btn-sm">Archive Delivered</button>
     </div>
   </div>
 
@@ -119,9 +117,13 @@
     <table class="table table-sm table-bordered align-middle mb-0" id="sheet-table">
       <thead class="table-light">
         <tr>
-          <th style="min-width: 140px;" class="sort-header" data-sort-column="consignment_number">
-            Consignment # <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          <th style="min-width: 120px;">Identifier Type</th>
+          <th style="min-width: 180px;" class="sort-header" data-sort-column="consignment_number">
+            Identifier # <span class="sort-icon"><i class="fa fa-sort"></i></span>
           </th>
+          <th style="min-width: 95px;">Pieces</th>
+          <th style="min-width: 150px;">Chargeable Weight (kg)</th>
+          <th style="min-width: 150px;">Chargeable Volume (m³)</th>
           <th style="min-width: 150px;" class="sort-header" data-sort-column="status">
             Status <span class="sort-icon"><i class="fa fa-sort"></i></span>
           </th>
@@ -146,8 +148,7 @@
         id="sheet-body"
         data-existing-rows="{{ consignments | tojson | forceescape }}"
         data-save-url="{{ url_for('admin.consignments_save') }}"
-        data-list-url="{{ url_for('admin.consignments_list_api') }}"
-        data-archive-url="{{ url_for('admin.consignments_archive') }}"></tbody>
+        data-list-url="{{ url_for('admin.consignments_list_api') }}"></tbody>
     </table>
   </div>
 
@@ -180,10 +181,19 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <div class="mb-3">
+            <label for="modal-identifier-type" class="form-label">Identifier Type</label>
+            <select id="modal-identifier-type" class="form-select"><option>LRN</option><option>Order ID</option><option>AWB</option></select>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-4"><label for="modal-pieces" class="form-label">Pieces</label><input id="modal-pieces" type="number" min="1" max="10000" step="1" class="form-control" /></div>
+            <div class="col-md-4"><label for="modal-chargeable-weight" class="form-label">Chargeable Weight (kg)</label><input id="modal-chargeable-weight" type="number" min="0" step="0.001" class="form-control" /></div>
+            <div class="col-md-4"><label for="modal-chargeable-volume" class="form-label">Chargeable Volume (m³)</label><input id="modal-chargeable-volume" type="number" min="0" step="0.001" class="form-control" /></div>
+          </div>
           <!-- Group 1: Consignment Number -->
           <div class="mb-4">
             <label class="form-label fw-bold">Consignment #</label>
-            <input type="text" class="form-control" id="modal-consignment-number" maxlength="16" />
+            <input type="text" class="form-control" id="modal-consignment-number" maxlength="64" />
           </div>
           <div class="mb-4">
             <label class="form-label fw-bold" for="modal-status">Status</label>

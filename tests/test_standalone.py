@@ -116,14 +116,13 @@ def test_excel_import_duplicate_handling_and_exports(admin_client):
     assert pdf.data.startswith(b"%PDF")
 
 
-def test_archive_only_removes_old_delivered_shipments(admin_client, app):
+def test_archive_option_and_endpoint_are_removed(admin_client, app):
     save(admin_client, "OLD001", status="Delivered", drop_date="2026-01-01")
-    save(admin_client, "NEW001", status="Delivered", drop_date="2026-09-01")
-    save(admin_client, "TRANSIT001", status="In Transit", drop_date="2026-01-01")
+    assert b"Archive Delivered" not in admin_client.get("/admin/consignments").data
     response = admin_client.post("/admin/consignments/archive", json={"before_date": "2026-06-01"})
-    assert response.get_json()["archived_count"] == 1
+    assert response.status_code == 404
     with app.app_context():
-        assert {row.consignment_number for row in Consignment.query.all()} == {"NEW001", "TRANSIT001"}
+        assert Consignment.query.count() == 1
 
 
 def test_leads_panel_rejection_and_json_backup(admin_client, app):

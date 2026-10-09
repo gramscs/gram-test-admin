@@ -136,6 +136,11 @@
           <i class="fa fa-users"></i> Leads
         </a>
       </li>
+      <li class="nav-item">
+        <a href="{{ url_for('admin.labels_panel') }}" class="nav-link {% if active_page == 'labels' %}active{% endif %}">
+          <i class="fa fa-barcode"></i> B2B Labels
+        </a>
+      </li>
       <li class="nav-item mt-3" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.75rem;">
         <a href="{{ url_for('admin.logout') }}" class="nav-link text-danger">
           <i class="fa fa-sign-out"></i> Logout

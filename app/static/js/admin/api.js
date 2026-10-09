@@ -71,17 +71,6 @@
     });
   }
 
-  function archiveDelivered(archiveUrl, payload) {
-    return _fetchJson(archiveUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      timeout: 60000
-    }).catch(function (err) {
-      return { success: false, status: err.status || 500, message: err.message || 'Request failed', body: err.body || null };
-    });
-  }
-
   function deletePod(rowId) {
     var url = '/admin/consignments/' + encodeURIComponent(rowId) + '/pod';
     return _fetchJson(url, { method: 'DELETE', headers: { 'Accept': 'application/json' } }).catch(function (err) {
@@ -93,7 +82,6 @@
   window.adminAPI = {
     fetchList: fetchList,
     saveRows: saveRows,
-    archiveDelivered: archiveDelivered,
     deletePod: deletePod
   };
 })();

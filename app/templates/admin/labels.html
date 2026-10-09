@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+{% set active_page = 'labels' %}
+{% block title %}B2B Labels – Gram SCS{% endblock %}
+{% block topbar_title %}B2B Labels{% endblock %}
+{% block content %}
+<h4>B2B Shipping Labels</h4>
+<p class="text-muted">Select saved shipments to download 4×6-inch labels. Each piece gets its own label. Weight is in kg and volume in m³. Print at actual size (100%). Maximum 500 labels per download.</p>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<form method="get" class="d-flex gap-2 mb-3">
+  <label class="visually-hidden" for="label-search">Search identifier</label>
+  <input id="label-search" name="search" value="{{ search }}" class="form-control" placeholder="Search LRN, Order ID, or AWB" />
+  <button class="btn btn-outline-primary">Search</button>
+</form>
+<form method="post" action="{{ url_for('admin.labels_generate', page=page, search=search) }}">
+  <div class="table-responsive bg-white border rounded mb-3">
+    <table class="table mb-0">
+      <thead><tr><th><input id="select-all-labels" type="checkbox" aria-label="Select all shipments on this page" /></th><th>Type</th><th>Identifier</th><th>Pieces</th><th>Ship From</th><th>Ship To</th><th>Weight (kg)</th><th>Volume (m³)</th></tr></thead>
+      <tbody>{% for row in rows %}<tr>
+        <td><input type="checkbox" name="consignment_ids" value="{{ row.id }}" aria-label="Select {{ row.consignment_number }}" /></td>
+        <td>{{ row.identifier_type or 'LRN' }}</td><td>{{ row.consignment_number }}</td><td>{{ row.pieces or 1 }}</td>
+        <td>{{ row.pickup_tag or row.pickup_address or '—' }}</td><td>{{ row.drop_tag or row.drop_address or '—' }}</td>
+        <td>{{ row.chargeable_weight if row.chargeable_weight is not none else '—' }}</td><td>{{ row.chargeable_volume if row.chargeable_volume is not none else '—' }}</td>
+      </tr>{% else %}<tr><td colspan="8" class="text-center text-muted p-4">No matching saved shipments. Add and save shipments in Consignments first.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <button class="btn btn-primary" {% if not rows %}disabled{% endif %}>Download B2B Labels PDF</button>
+  <span class="ms-2 text-muted">Selections apply to this page.</span>
+</form>
+<div class="d-flex gap-3 align-items-center mt-3">
+{% if page > 1 %}<a href="{{ url_for('admin.labels_panel', page=page-1, search=search) }}">Previous</a>{% endif %}
+<span>Page {{ page }} · {{ total }} shipments</span>
+{% if page * 25 < total %}<a href="{{ url_for('admin.labels_panel', page=page+1, search=search) }}">Next</a>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>document.getElementById('select-all-labels').addEventListener('change', function () { document.querySelectorAll('[name="consignment_ids"]').forEach(input => { input.checked = this.checked; }); });</script>
+{% endblock %}

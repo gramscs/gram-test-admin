@@ -5,7 +5,11 @@ db = SQLAlchemy()
 
 class Consignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    consignment_number = db.Column(db.String(16), unique=True, nullable=False)
+    consignment_number = db.Column(db.String(64), unique=True, nullable=False)
+    identifier_type = db.Column(db.String(12), nullable=False, default="LRN", server_default="LRN")
+    pieces = db.Column(db.Integer, nullable=False, default=1, server_default="1")
+    chargeable_weight = db.Column(db.Numeric(12, 3))
+    chargeable_volume = db.Column(db.Numeric(12, 3))
     status = db.Column(db.String(200))
     pickup_pincode = db.Column(db.String(6))
     pickup_address = db.Column(db.Text)

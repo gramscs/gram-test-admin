@@ -160,6 +160,32 @@ Allow outbound access to the exact hostname from your connection URI and port
 5432 in your hosting environment. The credentials must be available to the
 Python process for PostgreSQL authentication.
 
+## Shipment fields and B2B labels
+
+Each shipment has an identifier type (LRN, Order ID, or AWB), an identifier of
+up to 64 characters, a number of pieces, chargeable weight in kg, and chargeable
+volume in m³. Weight/volume accept non-negative values with up to three decimal
+places. Pieces must be a whole number from 1 to 10000. Identifiers remain unique
+across all types. Existing records default to LRN and one piece.
+
+Local SQLite development upgrades existing shipment tables automatically on
+startup. To upgrade an existing PostgreSQL/Supabase database, run explicitly:
+
+```bash
+python -m flask --app wsgi:app upgrade-db
+python -m flask --app wsgi:app check-db
+```
+
+The upgrade adds the new columns and allows longer identifiers without deleting
+records. It does not require copying or replacing the database.
+
+Open **B2B Labels** in the sidebar, select saved shipments, and download a
+4×6-inch PDF. The PDF has one page per piece with the identifier, Code 128
+barcode, sender and recipient addresses/PIN codes, piece number, and shipment
+chargeable weight/volume totals. Print at 100% scale. Each download is limited
+to 500 labels; selections apply to the current page. The Archive Delivered
+button and deletion endpoint have been removed.
+
 ## Deploy as an individual app
 
 Set `FLASK_ENV=production`, a strong `SECRET_KEY`, your `ADMIN_PASSWORD_HASH`,
@@ -190,13 +216,11 @@ python -m pytest -q
 ```
 
 Tests use temporary databases and uploads. They cover login protection, admin
-screens, shipment editing, delivery proofs, Excel import/export, archive deletion,
+screens, shipment editing, delivery proofs, Excel import/export, shipping labels,
 enquiries, backups, startup, and database persistence.
 
 ## Behavior retained from the original
 
-- **Archive Delivered deletes old delivered shipments and their delivery-proof
-  files.** It does not move them into a separate archive.
 - The original PDF export currently produces a PDF with the title
   “Consignments Export”; it does not print shipment rows. Excel export includes
   records.
