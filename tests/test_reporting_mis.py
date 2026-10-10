@@ -199,3 +199,99 @@ def test_existing_database_adds_mis_tables_without_changing_shipments(app, shipm
     with app.app_context():
         assert [(row.id,row.consignment_number,row.pieces) for row in Consignment.query.order_by(Consignment.id)]==before
         assert MisReport.query.count()==0 and MisView.query.count()==0
+
+
+def pdf_text(content):
+    reader = PdfReader(io.BytesIO(content))
+    assert reader.pages
+    pages = [page.extract_text() or '' for page in reader.pages]
+    assert all('GRAM SCS' in page for page in pages)
+    assert 'Management MIS' in pages[0]
+    return '\n'.join(pages)
+
+
+def test_tracker_pdf_replaces_title_only_export_with_all_saved_shipments(admin_client, shipments):
+    response = admin_client.get('/admin/consignments/export.pdf')
+    assert response.status_code == 200
+    text = pdf_text(response.data)
+    assert 'Shipment register' in text
+    for identifier in ('=SUM(1,2)', 'OPEN-1', 'UNDATED', 'OLDER'):
+        assert identifier in text
+    assert 'Chargeable weight (kg)' in text and '19.750 kg' in text
+
+
+def test_all_pdf_entry_points_include_healthy_shipments_not_only_attention_records(app, admin_client):
+    with app.app_context():
+        db.session.add(Consignment(consignment_number='HEALTHY-PDF-001', status='Delivered', pieces=7, chargeable_weight=22.5, chargeable_volume=.75, pickup_date='2026-10-10', pickup_tag='Delhi', drop_tag='Mumbai', pod_image='pod.pdf', invoice_file='invoice.pdf'))
+        db.session.commit()
+    for url in ('/admin/mis/export?format=pdf', '/admin/consignments/export.pdf'):
+        text = pdf_text(admin_client.get(url).data)
+        assert 'HEALTHY-PDF-001' in text and 'No attention flags' in text
+        assert '22.500' in text and '0.750' in text
+    generated = admin_client.post('/admin/mis/reports', json={'name':'Saved PDF', 'format':'pdf'})
+    assert generated.status_code == 200
+    text = pdf_text(admin_client.get(generated.json['download_url']).data)
+    assert 'HEALTHY-PDF-001' in text and 'Shipment register' in text
+
+
+def test_pdf_empty_filters_explain_missing_results_instead_of_silent_zeroes(admin_client, shipments):
+    response = admin_client.get('/admin/mis/export?format=pdf&period=custom&start=2027-01-01&end=2027-01-31')
+    text = pdf_text(response.data)
+    assert 'No shipments match these report filters.' in text
+    assert 'database contains 4 saved shipments' in text
+    assert 'pickup date is missing or invalid' in text
+    assert '=SUM(1,2)' not in text and 'OPEN-1' not in text
+
+
+def test_pdf_search_matches_tracker_and_preserves_selected_columns(app, admin_client, shipments):
+    query = '?search=OPEN-1'
+    table = admin_client.get('/admin/consignments/list'+query).json
+    assert table['total'] == 1
+    text = pdf_text(admin_client.get('/admin/consignments/export.pdf'+query).data)
+    assert 'OPEN-1' in text and 'UNDATED' not in text and 'OLDER' not in text
+    generated = admin_client.post('/admin/mis/reports', json={'name':'Custom columns','format':'pdf','filters':{'search':'OPEN-1'},'columns':['consignment_number','pickup_address','invoice']})
+    assert generated.status_code == 200
+    text = pdf_text(admin_client.get(generated.json['download_url']).data)
+    assert 'Pickup address' in text and 'Invoice uploaded' in text and 'OPEN-1' in text
+    with app.app_context():
+        row = db.session.get(MisReport, generated.json['id'])
+        assert json.loads(row.filters_json)['search'] == 'OPEN-1'
+        assert row.row_count == 1
+
+
+def test_pdf_register_paginates_and_keeps_last_row_with_long_escaped_addresses(app, admin_client):
+    with app.app_context():
+        for index in range(81):
+            db.session.add(Consignment(consignment_number=f'PAGED-{index:03d}', status='Delivered', pickup_date='2026-10-10', pickup_address='A & B <Warehouse>\n' * (400 if index == 0 else 2), drop_address='Destination', pod_image='proof.pdf', invoice_file='invoice.pdf'))
+        db.session.commit()
+    response = admin_client.get('/admin/mis/export?format=pdf&columns=consignment_number&columns=pickup_address&columns=drop_address')
+    assert response.status_code == 200
+    reader = PdfReader(io.BytesIO(response.data))
+    assert len(reader.pages) > 4
+    text = pdf_text(response.data)
+    assert 'PAGED-000' in text and 'PAGED-080' in text
+    assert 'A & B <Warehouse>' in text
+
+
+def test_empty_database_pdf_has_a_save_all_instruction(admin_client):
+    text = pdf_text(admin_client.get('/admin/mis/export?format=pdf').data)
+    assert 'No saved shipments are available to report.' in text
+    assert 'Save All' in text
+
+
+def test_corrupt_pdf_export_is_an_error_not_a_successful_download(admin_client, monkeypatch):
+    from app.admin import mis_exports
+    def corrupt(self, flowables, **kwargs):
+        self.filename.write(b'not a PDF')
+    monkeypatch.setattr(mis_exports.SimpleDocTemplate, 'build', corrupt)
+    response = admin_client.get('/admin/mis/export?format=pdf')
+    assert response.status_code == 500
+    assert response.mimetype == 'application/json'
+    assert 'could not be completed' in response.json['message']
+
+
+def test_pdf_download_controls_are_available_everywhere(admin_client):
+    assert b'id="shipment-pdf-export" data-report-download' in admin_client.get('/admin/consignments').data
+    dashboard = admin_client.get('/admin/dashboard').get_data(as_text=True)
+    assert 'data-report-download href="/admin/mis/export?' in dashboard
+    assert 'report-downloads.js' in dashboard

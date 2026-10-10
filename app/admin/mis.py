@@ -52,7 +52,6 @@ def report_response(content, filename, fmt):
     response = send_file(io.BytesIO(content), mimetype=MIMES[fmt], as_attachment=True, download_name=filename, max_age=0)
     response.headers['Cache-Control'] = 'private, no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
     return response
 
 
@@ -72,7 +71,11 @@ def mis_panel():
 @require_admin
 @protect_errors
 def mis_export():
-    fmt = output_format(request.args.get('format', 'xlsx'))
+    return export_response(output_format(request.args.get('format', 'xlsx')))
+
+
+@protect_errors
+def export_response(fmt):
     filters = normalize_filters(request.args.to_dict())
     columns = validate_columns(request.args.getlist('columns') or DEFAULT_COLUMNS)
     report = analyze(filters)

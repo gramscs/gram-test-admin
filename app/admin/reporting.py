@@ -3,6 +3,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import or_
+
 from app.models import Company, Consignment
 
 IST = ZoneInfo('Asia/Kolkata')
@@ -71,7 +73,10 @@ def normalize_filters(values, today=None):
     status = values.get('status', '')
     if not isinstance(status, str) or status not in ('', *STATUSES, 'No status', 'Other'):
         raise ValueError('Choose a valid shipment status.')
-    return {'period': period, 'start': start.isoformat() if start else '', 'end': end.isoformat() if end else '', 'company': company, 'status': status}
+    search = values.get('search', '')
+    if not isinstance(search, str) or len(search.strip()) > 200:
+        raise ValueError('Search must contain at most 200 characters.')
+    return {'search': search.strip(), 'period': period, 'start': start.isoformat() if start else '', 'end': end.isoformat() if end else '', 'company': company, 'status': status}
 
 
 def validate_columns(value):
@@ -93,9 +98,21 @@ def number(value):
         return None
 
 
+def search_shipments(query, search):
+    if not search:
+        return query
+    pattern = f'%{search}%'
+    return query.filter(or_(
+        *(getattr(Consignment, key).ilike(pattern) for key in (
+            'consignment_number', 'status', 'identifier_type', 'pickup_tag', 'drop_tag',
+            'pickup_pincode', 'drop_pincode', 'pickup_address', 'drop_address')),
+        Consignment.company.has(Company.name.ilike(pattern)),
+    ))
+
+
 def analyze(filters, today=None):
     today = today or datetime.now(IST).date()
-    query = Consignment.query
+    query = search_shipments(Consignment.query, filters.get('search', ''))
     if filters['company'] == 'unassigned':
         query = query.filter(Consignment.company_id.is_(None))
     elif filters['company']:
@@ -201,7 +218,7 @@ def analyze(filters, today=None):
         item['weight'] = float(item['weight'])
     company_label = next((item.name for item in Company.query.all() if str(item.id) == filters['company']), 'Unassigned client' if filters['company'] else 'All clients')
     period_label = f'{filters["start"]} to {filters["end"]}' if filters['start'] else 'All time'
-    return {'metrics': totals, 'statuses': [{'label': key, 'count': value} for key, value in counts.items() if value], 'trend': trend, 'grain': grain, 'clients': clients, 'routes': [{'label': key, 'count': value} for key, value in sorted(routes.items(), key=lambda item: (-item[1], item[0]))], 'exceptions': exceptions, 'details': details, 'recent': list(reversed(shipments[-5:])), 'filters': filters, 'period_label': period_label, 'client_label': company_label, 'status_label': filters['status'] or 'All statuses', 'generated_at': datetime.now(IST).strftime('%d %b %Y, %I:%M %p IST'), 'definition': DEFINITION}
+    return {'metrics': totals, 'saved_total': Consignment.query.count(), 'statuses': [{'label': key, 'count': value} for key, value in counts.items() if value], 'trend': trend, 'grain': grain, 'clients': clients, 'routes': [{'label': key, 'count': value} for key, value in sorted(routes.items(), key=lambda item: (-item[1], item[0]))], 'exceptions': exceptions, 'details': details, 'recent': list(reversed(shipments[-5:])), 'filters': filters, 'period_label': period_label, 'client_label': company_label, 'status_label': filters['status'] or 'All statuses', 'generated_at': datetime.now(IST).strftime('%d %b %Y, %I:%M %p IST'), 'definition': DEFINITION}
 
 
 def filter_options():

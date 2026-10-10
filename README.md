@@ -83,7 +83,7 @@ the same SQLite database to display these records. On Windows PowerShell, set
 - Shipment creation, editing, deletion, searching, sorting, and pagination.
 - PDF/image POD and invoice uploads inside the shipment form, previews, downloads,
   staged removal, and file-content validation.
-- Excel import, Excel export, import-template download, and the original PDF button.
+- Excel import/export, import-template download, and a complete shipment MIS PDF.
 - Client company masters with multiple pickup/drop presets and editable shipment snapshots.
 - B2B piece labels with optional Code 128 barcodes and PDF preview.
 - Complete ZIP backup of all admin tables and uploaded files, with ordered
@@ -270,9 +270,9 @@ failed-save recovery, Excel import/export, labels, backups, startup, and persist
 
 ## Behavior retained from the original
 
-- The original PDF export currently produces a PDF with the title
-  “Consignments Export”; it does not print shipment rows. Excel export includes
-  records.
+- Shipment Tracker **Export PDF** uses the MIS generator and includes the full
+  saved shipment register matching the current search, together with management
+  charts and summaries. Unsaved form edits require **Save All** first.
 - Complete backups include database records and uploaded files; the optional
   data-only JSON export contains records and file references. No backup-restore
   interface is included.
@@ -390,7 +390,8 @@ Use **Pickup-date period**, **Client** and **Current status** to select a view.
 Periods include all time, the last 7/30 days, this month/quarter and custom dates.
 Archived clients remain available for historical reporting. Click a client in
 **Volume by client** to filter the dashboard to that client. Dashboard downloads
-use the same applied filters.
+use the same applied filters. Shipment search can also narrow reports by
+identifier, client, status, route, address or pincode.
 
 Reporting definitions:
 
@@ -412,7 +413,7 @@ Reporting definitions:
 
 Open **MIS Reports** to manage reports:
 
-1. Choose filters and the columns for your shipment register.
+1. Choose filters, optional shipment search and the columns for your register.
 2. Enter a report/view name, optional notes and a download format.
 3. **Generate & save report** stores a snapshot and starts its download. The
    success message provides a download link and **Refresh report history**.
@@ -428,10 +429,23 @@ pickup trend, client and route breakdowns, attention flags and the full filtered
 shipment register with your chosen columns. **CSV** contains the full selected
 register. Spreadsheet text is protected against formula execution.
 
-**PDF** is a landscape management summary with vector charts, metrics and
-coverage, the top 15 clients/routes, and the first 50 attention records in shipment
-record order. Use Excel or CSV for the complete detail register. Reports show
-pickup-date filters and generation time in IST.
+**PDF** includes a landscape management summary with vector charts, metrics and
+coverage, the top 15 clients/routes, and the first 50 attention records. It also
+includes **every filtered shipment**, even those with no attention flags, using
+your selected register columns. Wide tables are divided into readable column
+groups with row numbers and the selected shipment identifier repeated; long
+tables/addresses continue across pages. Reports show pickup-date filters, search
+and generation time in IST.
+
+When no shipments match, the PDF states this clearly, shows the number of saved
+shipments, and explains which dates/filters to check. An empty database explains
+that shipments must be added/imported and saved first. Downloads read and check
+the response before saving the file: login pages, server errors, empty files and
+invalid PDF responses are shown as errors instead of becoming misleading PDFs.
+Generated reports are checked for an overview and register before being offered.
+
+After updating, restart the app, refresh the browser, and **generate a new PDF**.
+Previously saved reports remain their original snapshots and are not rewritten.
 
 Complete backups include the `mis_view` and `mis_report` tables. Generated MIS
 files are linked to their history rows in `mis_reports/`, with checksums and

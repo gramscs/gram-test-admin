@@ -11,7 +11,7 @@
     const notice=sessionStorage.getItem('mis-notice');
     if(notice){sessionStorage.removeItem('mis-notice');show(notice);}
     function value(name){return form.elements.namedItem(name).value;}
-    function content(){return {name:value('name'),notes:value('notes'),format:value('format'),filters:{period:value('period'),start:value('start'),end:value('end'),company:value('company'),status:value('status')},columns:Array.from(form.querySelectorAll('[name="columns"]:checked')).map(input=>input.value)};}
+    function content(){return {name:value('name'),notes:value('notes'),format:value('format'),filters:{period:value('period'),start:value('start'),end:value('end'),company:value('company'),status:value('status'),search:value('search')},columns:Array.from(form.querySelectorAll('[name="columns"]:checked')).map(input=>input.value)};}
     async function action(work){
         if(busy)return;
         busy=true;form.querySelectorAll('button').forEach(button=>button.disabled=true);
@@ -23,11 +23,12 @@
         action(async()=>{
             show('Generating your report. Keep this page open…');
             const result=await adminUI.request(config.report_url,content());
-            const link=document.createElement('a');link.href=result.download_url;link.download='';link.textContent='Download generated report';
+            const link=document.createElement('a');link.href=result.download_url;link.setAttribute('data-report-download','');link.textContent='Download generated report';
+            show('Report saved. Downloading your file…');
+            await adminReportDownloads.download(result.download_url);
             show('Report saved. Your download is ready. ');feedback.append(link);
             // Avoid interrupting the download with a page reload.
             const refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-sm btn-outline-secondary ms-2';refresh.textContent='Refresh report history';refresh.addEventListener('click',()=>reload('Report history updated.'));feedback.append(refresh);
-            link.click();
         });
     });
     document.getElementById('save-view').addEventListener('click',()=>{
@@ -40,6 +41,7 @@
     });
     document.querySelectorAll('[data-load-view]').forEach(button=>button.addEventListener('click',()=>{
         const view=config.views.find(row=>row.id===Number(button.dataset.loadView));loaded=view.id;
+        form.elements.namedItem('search').value=view.filters.search||'';
         Object.entries(view.filters).forEach(([key,val])=>{form.elements.namedItem(key).value=val;});
         for(const key of ['name','notes','format'])form.elements.namedItem(key).value=view[key];
         form.querySelectorAll('[name="columns"]').forEach(input=>input.checked=view.columns.includes(input.value));

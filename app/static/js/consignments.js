@@ -28,6 +28,15 @@ document.addEventListener("DOMContentLoaded", function () {
     var totalRows = 0;
     var totalPages = 1;
     var statusTimeoutId = null;
+    var pdfExportLink = document.getElementById('shipment-pdf-export');
+    var pdfExportBase = pdfExportLink ? pdfExportLink.href : '';
+
+    function updatePdfExport() {
+        if (!pdfExportLink) return;
+        var url = new URL(pdfExportBase);
+        if (currentSearch) url.searchParams.set('search', currentSearch);
+        pdfExportLink.href = url.href;
+    }
 
     function buildStatusSelect(value) {
         var options = [
@@ -514,6 +523,7 @@ document.addEventListener("DOMContentLoaded", function () {
             currentPage = page;
             currentPerPage = perPage;
             currentSearch = search;
+            updatePdfExport();
             currentSortBy = sortBy;
             currentSortOrder = sortOrder;
 
@@ -725,6 +735,7 @@ document.addEventListener("DOMContentLoaded", function () {
         perPageSelect.value = "10";
         currentPerPage = 10;
         currentSearch = "";
+        updatePdfExport();
         loadPage(1, "", 10, "id", "asc");
     });
 

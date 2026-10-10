@@ -28,7 +28,7 @@
           <li><a class="dropdown-item" href="{{ url_for('admin.consignments_import_template_excel') }}">Download Import Template</a></li>
           <li><hr class="dropdown-divider" /></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.consignments_export_excel') }}">Export Excel</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('admin.consignments_export_pdf') }}">Export PDF</a></li>
+          <li><a id="shipment-pdf-export" data-report-download title="Exports saved shipments matching your search" class="dropdown-item" href="{{ url_for('admin.consignments_export_pdf') }}">Export PDF</a></li>
         </ul>
       </div>
       <button id="add-row-btn" type="button" class="btn btn-outline-primary btn-sm">Add Row</button>

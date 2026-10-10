@@ -9,9 +9,6 @@ from pathlib import Path
 
 from flask import current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.pdfgen import canvas
-from sqlalchemy import or_
 from sqlalchemy.exc import DatabaseError, OperationalError, ProgrammingError
 
 from app import limiter
@@ -282,23 +279,8 @@ def consignments_list_api():
             sort_by = "id"
         sort_order = "asc" if sort_order.lower() == "asc" else "desc"
 
-        query = Consignment.query
-        if search:
-            pattern = f"%{search}%"
-            query = query.filter(
-                or_(
-                    Consignment.consignment_number.ilike(pattern),
-                    Consignment.status.ilike(pattern),
-                    Consignment.identifier_type.ilike(pattern),
-                    Consignment.pickup_tag.ilike(pattern),
-                    Consignment.drop_tag.ilike(pattern),
-                    Consignment.pickup_pincode.ilike(pattern),
-                    Consignment.drop_pincode.ilike(pattern),
-                    Consignment.pickup_address.ilike(pattern),
-                    Consignment.drop_address.ilike(pattern),
-                    Consignment.company.has(Company.name.ilike(pattern)),
-                )
-            )
+        from app.admin.reporting import search_shipments
+        query = search_shipments(Consignment.query, search)
 
         total = query.count()
         sort_column = getattr(Consignment, sort_by)
@@ -476,15 +458,11 @@ def consignments_export_excel():
 
 
 @admin_bp.route("/admin/consignments/export.pdf", methods=["GET"], endpoint="consignments_export_pdf")
+@limiter.limit("6 per minute")
 @require_admin
 def consignments_export_pdf():
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=landscape(A4))
-    pdf.drawString(40, 550, "Consignments Export")
-    pdf.showPage()
-    pdf.save()
-    buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name="consignments.pdf", mimetype="application/pdf")
+    from app.admin.mis import export_response
+    return export_response('pdf')
 
 
 CONSIGNMENT_SAVE_FIELDS = (

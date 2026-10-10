@@ -13,7 +13,9 @@ from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, LongTable
+
+from pypdf import PdfReader
 
 from app.admin.reporting import COLUMNS
 
@@ -38,7 +40,7 @@ def excel(report, columns):
     book = Workbook()
     summary = book.active
     summary.title = 'Management summary'
-    for row in [('GRAM SCS · Shipment MIS', ''), ('Generated', report['generated_at']), ('Pickup-date period', report['period_label']), ('Client', report['client_label']), ('Status', report['status_label']), ('Definition', report['definition']), ('Measure', 'Value'), *metric_rows(report)]:
+    for row in [('GRAM SCS · Shipment MIS', ''), ('Generated', report['generated_at']), ('Pickup-date period', report['period_label']), ('Client', report['client_label']), ('Status', report['status_label']), ('Definition', report['definition']), ('Shipment search', report['filters'].get('search', '') or 'All saved shipments'), ('Measure', 'Value'), *metric_rows(report)]:
         text_cell(summary, row)
     sheets = [
         ('Status', ['Current status', 'Shipments'], [[x['label'], x['count']] for x in report['statuses']]),
@@ -70,7 +72,7 @@ def excel(report, columns):
             cell.alignment = Alignment(wrap_text=True, vertical='top')
     summary.row_dimensions[6].height = 60
     summary['A1'].font = Font(size=19, bold=True, color='183B33')
-    summary.freeze_panes = 'A8'
+    summary.freeze_panes = 'A9'
     for name, chart_type, anchor, title in [('Status', DoughnutChart, 'D2', 'Current status'), ('Pickup trend', LineChart, 'D18', 'Pickup volume'), ('Clients', BarChart, 'D34', 'Shipments by client')]:
         source = book[name]
         if source.max_row > 1:
@@ -120,11 +122,22 @@ def pdf(report, columns):
     for style in styles.byName.values():
         style.fontName = 'LabelSans'
     styles.add(ParagraphStyle('MISHeading', fontName='LabelSansBold', fontSize=24, leading=30, textColor=colors.HexColor('#183B33'), spaceAfter=8))
+    styles.add(ParagraphStyle('MISRegister', fontName='LabelSans', fontSize=8, leading=11, textColor=colors.HexColor('#203B32'), wordWrap='LTR'))
     styles.add(ParagraphStyle('MISSmall', fontName='LabelSans', fontSize=9, leading=13, textColor=colors.HexColor('#536961')))
     def p(value, style='MISSmall'):
         return Paragraph(escape(str(value)), styles[style])
     story = [p('Shipment performance · Management MIS', 'MISHeading'), p(f'{report["period_label"]} · {report["client_label"]} · {report["status_label"]}'), p('Snapshot generated ' + report['generated_at']), Spacer(1, 16)]
     m = report['metrics']
+    if report['filters'].get('search'):
+        story += [p('Shipment search: ' + report['filters']['search']), Spacer(1,8)]
+    if not m['total']:
+        if report.get('saved_total', 0):
+            message = f"No shipments match these report filters. The database contains {report['saved_total']} saved shipments. Choose All time or reset the client, status and search filters."
+        else:
+            message = 'No saved shipments are available to report. Add or import shipments and click Save All before downloading the MIS.'
+        story += [p(message), Spacer(1,10)]
+    if m['excluded_undated']:
+        story += [p(f"{m['excluded_undated']} shipment(s) were excluded because their pickup date is missing or invalid. Choose All time to include them."), Spacer(1,8)]
     kpis = Table([[p('SHIPMENTS'), p('DELIVERED SHARE'), p('PIECES'), p('CHARGEABLE WEIGHT')], [p(f'{m["total"]:,}', 'MISHeading'), p(f'{m["delivered_share"]}%', 'MISHeading'), p(f'{m["pieces"]:,}', 'MISHeading'), p(f'{m["weight"]:,.3f} kg', 'MISHeading')]], colWidths=[189]*4)
     kpis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#EDF5F1')), ('TOPPADDING',(0,0),(-1,-1),12), ('BOTTOMPADDING',(0,0),(-1,-1),8)]))
     story += [kpis, Spacer(1, 20)]
@@ -163,22 +176,91 @@ def pdf(report, columns):
     story += [drawing, watchlist, Spacer(1,10), p(report['definition']), PageBreak()]
     def table(title, headers, rows, widths):
         story.append(p(title, 'Heading2'))
-        content = [[p(value) for value in headers]] + [[p(value) for value in row] for row in rows]
+        content = [[p(value, 'MISRegister') for value in headers]] + [[p(value, 'MISRegister') for value in row] for row in rows]
         result = Table(content, colWidths=widths, repeatRows=1, hAlign='LEFT')
-        result.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#E7F0EC')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F6F8F7')]),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]))
+        result.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#E7F0EC')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F6F8F7')]),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
         story.extend([result, Spacer(1,12)])
     table('Operational attention & data coverage', ['Measure', 'Value'], metric_rows(report)[9:], [590,166])
     table('Client performance · top 15 by shipment volume', ['Client','Shipments','Delivered','Pieces','Weight (kg)'], [[x['label'],x['count'],x['delivered'],x['pieces'],f'{x["weight"]:,.3f}'] for x in report['clients'][:15]] or [['No shipments','0','0','0','0']], [350,90,90,90,136])
     table('Routes · top 15 by shipment volume', ['Pickup → drop','Shipments'], [[x['label'],x['count']] for x in report['routes'][:15]] or [['No routes',0]], [650,106])
     table(f'Attention register · first 50 of {len(report["exceptions"])} shipments', ['Shipment','Client','Attention flags'], [[x['identifier'],x['client'],'; '.join(x['issues'])] for x in report['exceptions'][:50]] or [['No attention flags','','']], [150,200,406])
-    story.append(p('Excel and CSV contain the full filtered shipment register. PDF client/route tables show the top 15; the attention register shows the first 50 in shipment record order. Blank measurements are excluded from totals.'))
+    story.append(p('The full filtered shipment register follows. Client/route summary tables show the top 15; the attention summary shows the first 50. Blank measurements are excluded from totals.'))
+    story.append(PageBreak())
+    _pdf_register(story, report, columns, p)
+
     def footer(canvas, document):
         canvas.setFont('LabelSans',8)
         canvas.setFillColor(colors.HexColor('#536961'))
         canvas.drawString(42,22,'GRAM SCS · Shipment MIS · '+report['generated_at'])
         canvas.drawRightString(800,22,str(document.page))
     SimpleDocTemplate(buffer,pagesize=landscape(A4),leftMargin=42,rightMargin=42,topMargin=34,bottomMargin=40,title='GRAM SCS Shipment MIS',author='GRAM SCS').build(story,onFirstPage=footer,onLaterPages=footer)
-    return buffer.getvalue()
+    content = buffer.getvalue()
+    _validate_pdf(content)
+    return content
+
+
+
+def _pdf_register(story, report, columns, p):
+    """Keep every selected row/column readable; repeat identity across column groups."""
+    details = report['details']
+    story.extend([p(f"Shipment register · {len(details)} saved shipments", 'Heading2'),
+                  p(f"{report['period_label']} · {report['client_label']} · {report['status_label']}")])
+    if not details:
+        story.append(p('No shipments match this report. Choose All time or reset the filters to see saved shipments.'))
+        return
+    weights = {'consignment_number': 115, 'client': 160, 'status': 105, 'pickup_address': 240, 'drop_address': 240, 'issues': 240}
+    identity = ['consignment_number'] if 'consignment_number' in columns else []
+    groups, batch = [], []
+    width = 30 + sum(weights[key] for key in identity)
+    for key in columns:
+        if key in identity:
+            continue
+        weight = weights.get(key, 105)
+        if batch and (width + weight > 756 or len(batch) >= 5):
+            groups.append(identity + batch)
+            batch, width = [], 30 + sum(weights[key] for key in identity)
+        batch.append(key)
+        width += weight
+    if batch or not groups:
+        groups.append(identity + batch)
+    story.append(p('All selected shipments are included. Wide registers are divided into column groups; row numbers and the selected shipment identifier connect the groups.'))
+    for index, keys in enumerate(groups, 1):
+        if index > 1:
+            story.append(PageBreak())
+        story.extend([Spacer(1,10), p(f'Column group {index} of {len(groups)} · {len(details)} shipments', 'Heading3')])
+        data = [[p('Row', 'MISRegister')] + [p(COLUMNS[key], 'MISRegister') for key in keys]]
+        for row_number, row in enumerate(details, 1):
+            values = []
+            for key in keys:
+                value = row[key]
+                if key in ('chargeable_weight', 'chargeable_volume') and value != '':
+                    value = f'{value:,.3f}'
+                elif key == 'pieces':
+                    value = f'{value:,}'
+                values.append(p(value if value != '' else '—', 'MISRegister'))
+            data.append([p(row_number, 'MISRegister'), *values])
+        total_weight = sum(weights.get(key,105) for key in keys)
+        widths = [30] + [726 * weights.get(key,105) / total_weight for key in keys]
+        register = LongTable(data, colWidths=widths, repeatRows=1, splitByRow=1, splitInRow=1, hAlign='LEFT')
+        register.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#E7F0EC')),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F6F8F7')]),
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
+            ('LINEBELOW',(0,0),(-1,0),.5,colors.HexColor('#C6D7CE')),
+        ]))
+        story.append(register)
+
+
+def _validate_pdf(content):
+    """Never offer a corrupt or title-only generated PDF as a successful MIS."""
+    if not content.startswith(b'%PDF-'):
+        raise RuntimeError('Generated MIS is not a PDF.')
+    reader = PdfReader(io.BytesIO(content))
+    if not reader.pages or 'Management MIS' not in (reader.pages[0].extract_text() or ''):
+        raise RuntimeError('Generated MIS overview is missing.')
+    if not any('Shipment register' in (page.extract_text() or '') for page in reader.pages):
+        raise RuntimeError('Generated MIS shipment register is missing.')
 
 
 def export_bytes(report, columns, output_format):
