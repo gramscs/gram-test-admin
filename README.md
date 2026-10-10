@@ -107,6 +107,9 @@ app/
   static/fonts/               Icon fonts
   static/images/logo.png      Original branding
 tests/                        Standalone application tests
+database/                     Next-version ER models; separate from the active app
+docs/database-model.md        Database design, integrity rules and migration mapping
+docs/database-schema.sql      Generated PostgreSQL schema for empty staging databases
 run.py                        Local server entry point
 wsgi.py                       Production server entry point
 .env.example                  Configuration template
@@ -130,6 +133,13 @@ added shipments. These are database values, not sample analytics. On small
 screens, use the menu button beside the logo to open navigation.
 
 ## Database and delivery-proof files
+
+The supplied ten-table ER diagram is implemented in the **next-version**
+SQLAlchemy [database model](docs/database-model.md), with UUID keys, shipment
+history, versioned documents, file metadata, MIS snapshots and audit records.
+Review the [PostgreSQL schema](docs/database-schema.sql) and migration mapping
+there. This design is not applied to the running app automatically; the
+current database and uploads remain unchanged.
 
 By default, this app creates a **new, empty** SQLite database at
 `instance/admin.db` and stores uploaded PODs and invoices in `instance/uploads/`.
