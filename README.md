@@ -149,9 +149,11 @@ To create the new schema and import existing records in one run, follow the
 python migrations/001_shipment_database.py --apply
 ```
 
-It uses the configured database, preserves original tables and archives every
-original row. If local SQLite data is being imported into Supabase, set the
-target `DATABASE_URL` securely and add `--source-local instance/admin.db`.
+Set `DATABASE_URL` securely to a fresh, empty target. The source defaults to
+local `instance/admin.db`; use `MIGRATION_SOURCE_DATABASE_URL` for a remote
+source or `--source-local` for another local file. The command creates all ten
+model tables, imports legacy or full-model data and archives every source row,
+including extra tables/columns. It preserves existing history and relationships.
 Omitting `--apply` performs a preflight. The migration does not switch the
 dashboard's backend or move file storage automatically.
 

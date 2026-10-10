@@ -334,22 +334,52 @@ def test_separate_sqlite_source_can_migrate_to_target(populated, tmp_path):
             destination.dispose()
 
 
-def test_cli_runs_without_flask_startup_and_redacts_credentials(populated):
+def test_cli_runs_without_flask_startup_and_redacts_credentials(populated, tmp_path):
     engine, storage, content = populated
     if engine.dialect.name != "sqlite":
         pytest.skip("CLI process smoke uses a disposable SQLite file")
     root = Path(__file__).resolve().parents[1]
-    settings = dict(os.environ, DATABASE_URL=engine.url.render_as_string(hide_password=False),
+    settings = dict(os.environ, DATABASE_URL=f"sqlite:///{tmp_path / 'cli-target.db'}",
         MIGRATION_SOURCE_DATABASE_URL="", SUPABASE_URL="", SUPABASE_KEY="", ADMIN_USERNAME="admin")
-    args = [sys.executable, str(root / "migrations/001_shipment_database.py"), "--uploads-dir", str(storage.root)]
+    args = [sys.executable, str(root / "migrations/001_shipment_database.py"), "--source-local", engine.url.database, "--uploads-dir", str(storage.root)]
     first = subprocess.run(args, env=settings, capture_output=True, text=True)
     assert first.returncode == 0 and '"status": "ready"' in first.stdout
     assert_no_migration_tables(engine)
     second = subprocess.run(args + ["--apply"], env=settings, capture_output=True, text=True)
     assert second.returncode == 0 and '"status": "applied"' in second.stdout
+    settings["DATABASE_URL"] = engine.url.render_as_string(hide_password=False)
+    same_database = subprocess.run(args + ["--apply"], env=settings, capture_output=True, text=True)
+    assert same_database.returncode == 1 and "must be different" in same_database.stderr
+    settings["DATABASE_URL"] = ""
+    missing_target = subprocess.run(args + ["--apply"], env=settings, capture_output=True, text=True)
+    assert missing_target.returncode == 1 and "fresh target" in missing_target.stderr
+    assert_no_migration_tables(engine)
     settings["DATABASE_URL"] = "postgresql://user:do-not-print-this@[YOUR-PASSWORD]:5432/postgres"
     rejected = subprocess.run(args + ["--apply"], env=settings, capture_output=True, text=True)
     assert rejected.returncode == 1 and "do-not-print-this" not in rejected.stdout + rejected.stderr
+
+
+def test_fresh_legacy_import_accounts_for_every_table(populated, tmp_path):
+    source, storage, content = populated
+    with source.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE custom_operator_data (data TEXT)")
+        connection.execute(text("INSERT INTO custom_operator_data VALUES ('Keep this too')"))
+        before_schema, before_rows, _ = shipment_v1.read_source(connection)
+    destination = migration_engine(f"sqlite:///{tmp_path / 'all-legacy-target.db'}")
+    try:
+        result = migrate(destination, storage, source_engine=source, fresh_target=True)
+        assert result["counts"]["archived_rows"] == 10
+        assert len(result["counts"]["target"]) == 10
+        assert all(item["source_rows"] == item["archived_rows"] for item in result["counts"]["coverage"].values())
+        with destination.begin() as connection:
+            original = connection.execute(select(RECORDS).where(RECORDS.c.source_table == "custom_operator_data")).mappings().one()
+            assert original["source_values"] == {"data": "Keep this too"}
+            assert original["target_table"] is None
+        with source.begin() as connection:
+            schema, rows, _ = shipment_v1.read_source(connection)
+            assert shipment_v1.digest((schema, rows)) == shipment_v1.digest((before_schema, before_rows))
+    finally:
+        destination.dispose()
 
 
 class FakeBucket:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-run schema + legacy-data migration. No Flask startup required.
+"""One-run schema + complete-data import into a fresh target. No Flask startup required.
 
 Run from the repository: python migrations/001_shipment_database.py --apply
 Without --apply, performs the complete preflight without database writes.
@@ -51,23 +51,27 @@ def database_url(value, *, source=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Apply the schema and data in one transaction; otherwise preflight only.")
-    parser.add_argument("--source-local", type=Path, help="Import a local SQLite file into the configured target instead of importing in place.")
+    parser.add_argument("--source-local", type=Path, help="Source SQLite file; otherwise use MIGRATION_SOURCE_DATABASE_URL or instance/admin.db.")
+    parser.add_argument("--source-format", choices=("auto", "legacy", "er"), default="auto", help="Detect the source model automatically, or choose when both models contain data.")
     parser.add_argument("--uploads-dir", type=Path, default=ROOT / "instance" / "uploads", help="Existing local uploads folder (never moved or rewritten).")
     args = parser.parse_args(argv)
     load_dotenv(ROOT / ".env", override=False)
     engine = source_engine = None
     try:
-        target_setting = os.getenv("DATABASE_URL", "").strip() or f"sqlite:///{ROOT / 'instance' / 'admin.db'}"
-        source_setting = os.getenv("MIGRATION_SOURCE_DATABASE_URL", "").strip() or target_setting
+        target_setting = os.getenv("DATABASE_URL", "").strip()
+        if not target_setting:
+            raise MigrationError("Set DATABASE_URL securely to the fresh target database. The existing local database is the default source, never the default target.")
+        source_setting = os.getenv("MIGRATION_SOURCE_DATABASE_URL", "").strip() or f"sqlite:///{ROOT / 'instance' / 'admin.db'}"
         if args.source_local:
             if os.getenv("MIGRATION_SOURCE_DATABASE_URL", "").strip():
                 raise MigrationError("Choose either --source-local or MIGRATION_SOURCE_DATABASE_URL, not both.")
             source_setting = f"sqlite:///{args.source_local.resolve()}"
         target_url = database_url(target_setting)
         source_url = database_url(source_setting, source=True)
+        if source_url == target_url:
+            raise MigrationError("The source and fresh target must be different databases. Set DATABASE_URL to the new database.")
         engine = migration_engine(target_url)
-        if source_url != target_url:
-            source_engine = migration_engine(source_url)
+        source_engine = migration_engine(source_url)
         supabase = None
         supabase_url, supabase_key = os.getenv("SUPABASE_URL", "").strip(), os.getenv("SUPABASE_KEY", "").strip()
         if supabase_url and supabase_key:
@@ -75,12 +79,13 @@ def main(argv=None):
             supabase = create_client(supabase_url, supabase_key)
         storage = Storage(args.uploads_dir, supabase, os.getenv("SUPABASE_BUCKET", "pod-uploads"))
         result = migrate(engine, storage, source_engine=source_engine,
-                         admin_username=os.getenv("ADMIN_USERNAME", "admin"), dry_run=not args.apply)
+                         admin_username=os.getenv("ADMIN_USERNAME", "admin"), dry_run=not args.apply,
+                         fresh_target=True, source_format=args.source_format)
         print(json.dumps(result, indent=2))
         if result["status"] == "ready":
             print("Preflight passed. No database data was changed. Add --apply to run the migration.")
         elif result["status"] == "applied":
-            print("Migration committed. Legacy tables and upload bytes were retained. The dashboard still uses its legacy tables until backend cutover.")
+            print("Migration committed: all ten model tables created and all source rows reconciled. Source records and upload bytes were retained. Dashboard backend cutover remains separate.")
         else:
             print("Migration already applied and verified. No duplicate records were added.")
         return 0

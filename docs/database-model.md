@@ -5,8 +5,10 @@ version. It is a concrete SQLAlchemy model and a tested PostgreSQL schema.
 The running dashboard still uses `app/models.py`; its database and uploads
 have not been migrated or changed.
 
-A [single-run migration](database-migration.md) now creates this model and
-copies existing data, including a complete original-row archive. It is run
+A [single-run migration](database-migration.md) now creates this model in a
+fresh destination and copies legacy or full-model data, including every source
+table/column in a complete original-row archive. It preserves existing full-model
+UUIDs, history, document versions and relationships. It is run
 explicitly and is not part of app startup or `upgrade-db`.
 
 ## In simple language

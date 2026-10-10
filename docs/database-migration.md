@@ -1,174 +1,195 @@
-# One-run shipment database migration
+# One-run import into a fresh database
 
-The entry point is [`migrations/001_shipment_database.py`](../migrations/001_shipment_database.py).
-It creates the ER model and copies the existing records **in one transaction**.
-It supports SQLite, PostgreSQL/Supabase, and a local SQLite source imported
-into a separate PostgreSQL target. Use the project's existing Python environment
-and dependencies; no Flask startup or manual SQL execution is needed.
+[`migrations/001_shipment_database.py`](../migrations/001_shipment_database.py)
+creates **all ten ER tables** and imports **all available source data in one
+transaction**. It accepts the current app's legacy database or a database already
+using the full ER model. SQLite and PostgreSQL/Supabase are supported, including
+SQLite-to-PostgreSQL imports. It does not require Flask startup or manual SQL.
 
-## Run once
+## Configure source and destination
 
-From this repository, with the virtual environment activated and the database
-settings already stored securely in `.env` or environment settings:
+Store `DATABASE_URL` securely in `.env` or environment settings, pointing to the
+**new, empty destination**. This setting is required. The destination must have
+no tables in its current schema before the first import. Do not run `init-db`,
+the app, or `database-schema.sql` against it first.
+
+The source defaults to the existing local `instance/admin.db`. To use another
+local file, pass `--source-local /path/to/source.db`. To use an existing remote
+database, set `MIGRATION_SOURCE_DATABASE_URL` securely to its connection string.
+Choose one source setting. The source and destination must be separate.
+
+For Supabase, provision the new project/database first and use its PostgreSQL
+connection (Connect → Session pooler). This script creates the tables, indexes
+and integrity rules **inside that database**; it does not provision a Supabase
+project or issue `CREATE DATABASE`. Placeholder or invalid URLs fail; there is
+no silent fallback to SQLite. Supabase connections require SSL automatically.
+
+For another PostgreSQL schema, configure the connection's search path. Only
+**tables in the source connection's current schema** are inventoried; tables in
+other schemas, SQL views/functions and unrelated databases are outside this
+import. Use the owner/BYPASSRLS source role: the script refuses a role that could
+read only part of an RLS-protected table. The target role needs schema-creation
+privileges and the source role needs read/locking privileges.
+
+## Run in one command
+
+With the project's Python environment activated, from the repository:
 
 ```bash
 python migrations/001_shipment_database.py --apply
 ```
 
-This reads the legacy tables from `DATABASE_URL` and creates the new tables
-alongside them in that same database. If `DATABASE_URL` is blank, it uses
-the local `instance/admin.db`, matching the app's development default.
-An invalid/placeholder PostgreSQL URL causes an error; it does not silently
-fall back to another database. Supabase connections automatically require SSL.
-
-**If your records are local but your target is Supabase**, set `DATABASE_URL`
-securely to the target Supabase PostgreSQL connection, then use this single command:
+With `DATABASE_URL` set to the fresh Supabase destination, this reads local
+`instance/admin.db`, creates the full schema and fills it. An explicit local
+source works too:
 
 ```bash
 python migrations/001_shipment_database.py --source-local instance/admin.db --apply
 ```
 
-For a different PostgreSQL source, set `MIGRATION_SOURCE_DATABASE_URL` securely
-to the source connection and use the first command. It defaults to the target
-when unset. Do not put passwords in shell arguments or chat. For a source
-in a different PostgreSQL schema, configure the connection's search path;
-tables are created in the target connection's current schema.
+For a remote source, set `MIGRATION_SOURCE_DATABASE_URL` and use the first command.
+Keep passwords in secure settings, outside command arguments and chat.
 
-Before running against operational data, download the app's complete backup
-and pause the app, imports and other database/storage writers. Test on a copy
-first. The migration locks database tables during its transaction, but does not
-lock external file storage or synchronize future writes into the old tables.
-Database credentials need schema-creation privileges on the target and table
-locking privileges on the source. A SQLite source file must permit locking;
-the migration still performs no source-data updates.
-
-For example, test the local data in a separate SQLite file:
-
-```bash
-DATABASE_URL=sqlite:///instance/migration-preview.db python migrations/001_shipment_database.py --source-local instance/admin.db --apply
-```
-
-To check the real configuration without applying anything, omit `--apply`:
+To check everything without applying, omit `--apply`:
 
 ```bash
 python migrations/001_shipment_database.py
 ```
 
-Preflight reads records/files, checks the new model's rules in an isolated
-in-memory database, and reports counts/warnings. It does not create the target
-tables or change source records. A new SQLite target connection may create
-an empty database file.
+Preflight reads the complete source and storage, validates against the model in
+an isolated in-memory database, and reports source, target and archive counts.
+It creates no destination tables; connecting to a fresh SQLite target may create
+an empty file. The source database and uploads are never modified.
 
-## What the command does
+For a disposable local destination, for example:
 
-1. Reads the existing client, location, consignment, MIS view/report, retained
-   enquiry and subscriber tables, including every column on those tables.
-2. Inventories referenced files, all regular local uploads, and the configured/
-   referenced Supabase buckets' `consignments/` namespace, including unlinked
-   uploads. It verifies readability and computes byte counts and SHA-256 hashes.
-3. Validates records against the new model. Missing files, malformed settings,
-   bad identifiers/counts, duplicate defaults, dangling clients, and incompatible
-   report-file sharing stop the migration.
-4. Creates all ten ER tables, indexes and integrity triggers. It generates stable
-   UUID mappings, copies clients/shipments/settings/report records, and creates
-   current version-1 POD/invoice links. Shared document files remain shared.
-5. Creates two migration bookkeeping tables, separate from the ten business tables:
-   `admin_migration_runs` records version, source schema, checksums, counts and
-   warnings; `admin_migration_records` stores every original row and its UUID mapping.
-6. Adds `migrate` audit entries for the original rows. It does not invent past
-   shipment events, upload times, actual delivery times or unknown preset/view links.
-7. Reconciles counts and rechecks the database source, then commits everything
-   together. A failure rolls back this run's tables and inserts on both PostgreSQL
-   and SQLite. Original tables and storage objects are never deleted or overwritten.
+```bash
+DATABASE_URL=sqlite:///instance/migration-preview.db python migrations/001_shipment_database.py --source-local instance/admin.db --apply
+```
 
-On PostgreSQL, the migration **enables RLS on all 12 newly created tables** and
-creates no browser-access policies. The owner/backend can operate normally;
-ordinary API roles are denied rows even if default grants exist. This does not
-alter RLS on legacy tables, create auth accounts, or enforce team roles in Flask.
+Before importing operational data, download the complete app backup and pause
+app/import/storage writers. Database locks protect the source during the import;
+external storage has no transaction lock. A SQLite source file must permit
+locking even though the script performs no source-data updates.
 
-## Every original field is retained
+## All ten business tables are created
 
-The ER diagram omits shipment PIN/tag values, raw dates, ETA/debug values,
-report notes, and saved-view update times. These are copied intact into
-`admin_migration_records.source_values`, alongside all other original fields
-and any extra columns found on the known legacy tables. Retained enquiries and
-subscribers are archived there too; their UI is not reintroduced.
+| Table | Existing full-model source | Current legacy app source |
+| --- | --- | --- |
+| `admin_users` | All users, roles and active flags; UUIDs preserved | Administrator identity and historical MIS usernames |
+| `companies` | All company records | Converted client records |
+| `company_locations` | All presets and their company links | Converted pickup/drop presets |
+| `consignments` | All shipments, preset links, dates and snapshots | Converted shipments and supported shipment fields |
+| `shipment_events` | Entire event history and attribution | Empty when history was never stored |
+| `files` | All file records and upload attribution, plus unlinked uploads | Metadata for all referenced and inventoried uploads |
+| `shipment_documents` | All POD/invoice versions and current flags | Current version-1 POD/invoice links |
+| `mis_views` | All saved settings and creator links | Converted saved MIS views |
+| `mis_reports` | All report/view/file links and historical snapshots | Converted historical MIS reports |
+| `audit_logs` | All existing audit history, including deleted-entity references | Explicit migration audit entries |
 
-The archive records the original table and ID plus the new table/UUID where one
-exists. Its values preserve date/timestamp/decimal representations; unexpected
-binary column values are base64 encoded. `source_schema` retains column types
-for interpretation. The original tables remain intact as well. This preserves
-data without inventing new business tables outside the diagram.
+Every table is created even if its source contains zero rows. Missing history,
+upload times, actual pickup/delivery times or unknown links are not fabricated.
+For a full-model import, UUIDs and foreign-key connections remain intact; no
+extra login identity or replacement audit history is injected.
 
-Typed shipment dates use the app's existing ISO/day-first date convention.
-Unrecognized dates remain null in the typed columns and produce warnings;
-their exact source strings remain in the archive. Empty status becomes
-`No status`, with the original value retained. Legacy MIS timestamps are treated
-as UTC, matching the current app's timestamp-writing behavior.
+Source format is detected automatically. If both legacy and ER tables contain
+data, the script stops until you choose `--source-format er` or
+`--source-format legacy`. Only the chosen model feeds the business tables;
+**every source table is still archived**, including the unchosen model. A partial
+ER schema also stops automatic detection instead of silently losing records.
 
-MIS filters' known client IDs and renamed column keys are mapped to the new
-UUIDs/field names. Original filters/columns and report notes remain in the
-archive. Filters referencing removed clients are retained with a review warning;
-the migration does not turn them into an all-client report.
+## Every source table and column is accounted for
 
-The configured `ADMIN_USERNAME` becomes the active administrator identity.
-Other usernames found in historical MIS records become inactive operator
-identities, preserving attribution without granting login. Unknown upload
-actors/times remain null. No password is read from or written to these tables.
+The script inventories **every table in the source's current schema**, including
+custom tables, retained enquiries/subscribers and extra columns. It creates two
+bookkeeping tables in addition to the ten business tables:
 
-## Files remain in existing storage
+- `admin_migration_runs`: source column definitions, checksums, warnings and counts.
+- `admin_migration_records`: every original row and its destination table/UUID,
+  where a model mapping exists.
 
-The database stores metadata and links; it does not hold the image/PDF bytes.
-The command reads existing storage and does not move, rewrite, upload or delete
-its objects. Local files continue to need the uploads folder; remote files
-continue to need their original Supabase project/bucket. Moving the database
-to another project does not by itself move object storage.
+Older fields omitted by the ER diagram—PIN/tag values, raw dates, ETA/debug
+values, report notes and saved-view update times—are preserved in
+`admin_migration_records.source_values`. Unmapped tables are archived completely
+rather than turned into additional business tables outside the diagram. This
+also preserves composite-key rows and duplicate rows from tables without a
+primary key. Empty tables appear in the source schema/count report.
 
-`--uploads-dir /path/to/existing/uploads` selects the local source folder.
-The default is this repository's `instance/uploads`. Supabase storage reads
-use `SUPABASE_URL`, `SUPABASE_KEY` and `SUPABASE_BUCKET` from secure settings.
-The key must allow listing and downloading the relevant private objects.
-Keep those settings pointed at the original storage project during migration.
+The JSON archive retains decimal/date/timestamp representations; unexpected
+binary column values are base64 encoded. The original source tables remain
+intact. Archived fields need a backend adapter or explicit schema extension
+before the UI can use them from the new database.
 
-`files.storage_path` uses canonical `local:relative/path` or
-`supabase:bucket/object/path` references, preserving uniqueness across buckets.
-The future ER-backed file adapter must parse these references and use the
-configured local folder or Supabase client. MIME detection describes the existing
-bytes; it does not replace the app's PDF/image safety validation or authorize
-previewing unknown file types.
+The result includes `source` and `target` row counts and `coverage` for each
+source table: `source_rows`, `archived_rows` and `mapped_rows`. Every source row
+must be archived. Counts in generated tables can differ from the source:
+legacy imports create file/document/user/audit records, and unlinked storage
+objects create additional file records.
 
-External URLs, escaping paths, symlinked inventory entries and unavailable
-objects fail instead of being fetched unsafely or silently omitted. No partial
-or “missing file” import is committed. Unrelated Supabase folders outside the
-admin namespace are not inventoried unless directly referenced by a record.
+## Legacy conversion rules
 
-## Reruns and existing target tables
+Legacy integer IDs receive stable UUID mappings recorded in the archive. Typed
+shipment dates use the app's ISO/day-first date convention; unrecognized dates
+remain null with a warning and their exact source strings stay in the archive.
+Empty status becomes `No status`. Legacy MIS timestamps are treated as UTC,
+matching the app's existing timestamp-writing behavior.
 
-After a successful run, the same command verifies the source/file digest,
-target data and complete migration archive and reports `already_applied`.
-It does not add duplicates, regenerate UUIDs or overwrite records.
+Known company IDs and renamed column keys in MIS filters/settings map to the
+new identifiers. Filters referring to removed clients retain their values with
+a warning. Original filters/columns remain in the archive.
 
-If source data, source files, target records or the archive have changed, the
-command stops. This is a one-time migration, not an ongoing synchronization
-tool. Do not keep using legacy writes after a production cutover.
+`ADMIN_USERNAME` becomes the active administrator identity for a legacy import.
+Other historical MIS usernames become inactive operators, preserving attribution
+without granting login. Unknown upload actors/times remain null. No password is
+read from or written to these tables.
 
-Before the first run, the target must have **no ER/ledger tables**. Legacy
-tables may exist for an in-place import; otherwise the target can be empty.
-The command refuses unmanaged existing ER tables, even empty ones, to avoid
-merging incompatible structures or replacing existing data. Do not run the
-standalone `database-schema.sql` first: this migration creates the schema itself.
+## Files stay in their existing storage
 
-## Dashboard cutover remains a separate change
+The database holds file metadata and relationships, not image/PDF bytes. The
+script reads files without moving, uploading, rewriting or deleting them. Local
+files still need the uploads folder; remote files still need their original
+storage project/bucket. A new database does not automatically move storage.
 
-This migrates the database schema and data. The dashboard's existing routes,
-JavaScript and uploads still use the legacy tables and integer IDs. They must
-be switched together to the new UUID models, canonical file references,
-history/audit writes, role checks, and complete-backup enumeration. Fields
-retained in the archive need an adapter or explicit schema extensions before
-the corresponding UI features can use the ER tables.
+`--uploads-dir /path/to/existing/uploads` selects the local folder; the default
+is `instance/uploads`. Supabase storage uses `SUPABASE_URL`, `SUPABASE_KEY` and
+`SUPABASE_BUCKET`, pointed to the **original** storage project. The key must
+allow listing/downloading private objects.
 
-Therefore the script does not switch the running dashboard automatically.
-After migration, verify the new records and keep the original app/database
-and full upload backup available until the backend cutover is tested. If a
-database migration fails, retry after fixing the reported source/configuration
-problem; this run's target writes have already been rolled back.
+The inventory covers all regular local uploads, referenced remote files and
+the configured/referenced Supabase buckets' `consignments/` namespace, including
+unlinked uploads. Unrelated remote folders are not enumerated unless referenced.
+Readable files get verified byte counts and SHA-256 checksums. A full-model
+source's existing sizes and known checksums must match its stored bytes.
+
+Missing/unreadable files, escaping paths, unsupported external URLs, symlinked
+inventory entries and mismatched metadata stop the whole import. Storage paths
+use canonical `local:relative/path` or `supabase:bucket/object/path` references;
+noncanonical ER paths are converted with their original values archived. The
+future backend file adapter must parse these references. Existing full-model
+file UUIDs, actors, upload times and original filenames are preserved.
+
+## Atomicity, RLS and repeat runs
+
+The script validates constraints before creating the destination schema, creates
+all tables/indexes/triggers, inserts data and the complete archive, reconciles
+counts and rechecks the source before committing. A failure rolls back this
+run's tables and data on PostgreSQL and SQLite; it does not leave a partial import.
+
+On PostgreSQL, **RLS is enabled on all 12 new tables**, with no browser policies.
+The owner/backend can operate normally; ordinary API roles cannot read rows even
+if default grants exist. This does not create Supabase Auth accounts or enforce
+team roles in the current Flask app.
+
+Repeating the same command verifies source/file checksums, destination records
+and the archive and reports `already_applied`, without duplicates. Changes to
+source data/files, destination records or the archive stop a repeat run instead
+of overwriting data. This is a one-time import, not ongoing synchronization.
+
+## Dashboard cutover
+
+The dashboard currently uses legacy tables, integer IDs and its existing upload
+adapter. This migration does not change the running app's backend. Switching it
+to the new database requires the UUID models, history/audit writes, canonical
+file references, role checks and backup enumeration to be updated together.
+Keep the original database and complete upload backup available until that
+backend cutover is tested.

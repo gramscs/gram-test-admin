@@ -1,10 +1,11 @@
-"""Atomic legacy -> ER migration, with complete row archives and retry checks.
+"""Atomic legacy/full-ER import, with complete row archives and retry checks.
 
 The CLI entry point is migrations/001_shipment_database.py. This module never
 imports Flask or uses its automatic schema creation. It never modifies uploads.
 """
 
 from contextlib import ExitStack
+from collections import Counter
 from datetime import UTC, date, datetime
 from decimal import Decimal
 import hashlib
@@ -116,6 +117,84 @@ def read_legacy(connection):
         if len({str(row["id"]) for row in rows[name]}) != len(rows[name]):
             raise MigrationError(f"Legacy table {name} has duplicate IDs.")
     return schema, rows
+
+
+def read_source(connection, source_format="auto", *, exclude=()):
+    """Inventory every current-schema table; choose the authoritative model.
+
+    Extra tables are archived, never silently ignored. In-place legacy retries
+    exclude tables created by this migration itself.
+    """
+    names = sorted(set(inspect(connection).get_table_names()) - set(exclude))
+    names = [name for name in names if not name.startswith("sqlite_")]
+    if connection.dialect.name == "postgresql":
+        filtered = connection.execute(text("""
+            SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_roles r ON r.rolname = current_user
+            WHERE n.nspname = current_schema() AND c.relname = ANY(:names)
+            AND c.relrowsecurity AND NOT (
+                r.rolsuper OR r.rolbypassrls OR
+                (pg_has_role(c.relowner, 'USAGE') AND NOT c.relforcerowsecurity)
+            )
+        """), {"names": names}).scalars().all()
+        if filtered:
+            raise MigrationError("The source role may see only part of the RLS-protected data. Use its owner/BYPASSRLS role for a complete import.")
+        if names:
+            quoted = ", ".join(connection.dialect.identifier_preparer.quote(name) for name in names)
+            connection.exec_driver_sql(f"LOCK TABLE {quoted} IN SHARE MODE")
+    schema, rows = {}, {}
+    for name in names:
+        table = Table(name, MetaData(), autoload_with=connection)
+        schema[name] = [{"name": col.name, "type": str(col.type), "nullable": col.nullable,
+                         "primary_key": col.primary_key} for col in table.c]
+        ordering = list(table.primary_key.columns)
+        query = select(table).order_by(*ordering) if ordering else select(table)
+        records = [dict(row) for row in connection.execute(query).mappings()]
+        rows[name] = records if ordering else sorted(records, key=digest)
+    er_names = set(Base.metadata.tables)
+    if source_format == "auto":
+        if er_names <= set(names):
+            er_count = sum(len(rows[name]) for name in er_names)
+            legacy_count = sum(len(rows.get(name, [])) for name in TARGET_MAP)
+            if er_count and legacy_count:
+                raise MigrationError("Both legacy and ER tables contain records. Choose --source-format legacy or er; all original tables will still be archived.")
+            source_format = "legacy" if legacy_count else "er"
+        elif set(names) & er_names:
+            raise MigrationError("The source contains an incomplete ER schema. Supply the complete model or choose --source-format legacy to archive those tables.")
+        else:
+            source_format = "legacy"
+    if source_format == "er":
+        if not er_names <= set(names):
+            raise MigrationError("ER source mode requires all ten model tables, including empty ones.")
+        for table in Base.metadata.sorted_tables:
+            if not set(table.c.keys()) <= set(rows[table.name][0] if rows[table.name] else (col["name"] for col in schema[table.name])):
+                raise MigrationError(f"ER source table {table.name} is missing model columns.")
+    elif source_format == "legacy":
+        if "consignment" not in names:
+            raise MigrationError("The source has no legacy consignment table. Check the separate source database setting.")
+    else:
+        raise MigrationError("Choose auto, legacy or er as the source format.")
+    return schema, rows, source_format
+
+
+def archive_source(schema, source_rows, namespace, source_format):
+    records = []
+    for name, originals in source_rows.items():
+        if len(name) > RECORDS.c.source_table.type.length:
+            raise MigrationError("A source table name exceeds the migration archive's supported length.")
+        keys = [col["name"] for col in schema[name] if col["primary_key"]]
+        for index, original in enumerate(originals):
+            if len(keys) == 1 and len(str(original[keys[0]])) <= 80:
+                source_id = str(original[keys[0]])
+            elif keys:
+                source_id = "pk:" + digest([original[key] for key in keys])
+            else:
+                source_id = f"row:{index}"
+            target = name if source_format == "er" and name in Base.metadata.tables else TARGET_MAP.get(name) if source_format == "legacy" else None
+            target_id = (UUID(str(original["id"])) if source_format == "er" else uuid5(namespace, f"{target}:{original['id']}")) if target else None
+            records.append({"version": VERSION, "source_table": name, "source_id": source_id,
+                "target_table": target, "target_id": target_id, "source_values": json_value(original)})
+    return records
 
 
 def parsed_date(value, warnings, label):
@@ -322,24 +401,41 @@ def target_snapshot(connection):
             for table in Base.metadata.sorted_tables}
 
 
-def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_run=False):
+def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_run=False,
+            fresh_target=False, source_format="auto"):
     if not admin_username or not admin_username.strip():
         raise MigrationError("ADMIN_USERNAME must not be blank.")
     now = datetime.now(UTC)
+    if fresh_target and (source_engine is None or source_engine is engine or
+            (engine.dialect.name == source_engine.dialect.name == "sqlite" and engine.url.database == source_engine.url.database)):
+        raise MigrationError("A fresh target requires a separate source database.")
     with ExitStack() as stack:
         source = stack.enter_context(source_engine.begin()) if source_engine is not None else None
         target = stack.enter_context(engine.begin())
         source = source if source is not None else target
         if target.dialect.name == "postgresql":
             target.execute(text("SELECT pg_advisory_xact_lock(723910042001)"))
-        schema, source_rows = read_legacy(source)
         inspector = inspect(target)
         completed = target.execute(select(RUNS).where(RUNS.c.version == VERSION)).mappings().first() if inspector.has_table(RUNS.name) else None
+        if fresh_target and not completed and inspector.get_table_names():
+            raise MigrationError("The target must be fresh: its current schema already contains tables. No existing tables will be replaced.")
+        exclude = set(Base.metadata.tables) | set(LEDGER.tables) if source is target else ()
+        mode = "legacy" if source is target and source_format == "auto" else source_format
+        schema, source_rows, mode = read_source(source, mode, exclude=exclude)
         existing = set(inspector.get_table_names()) & set(Base.metadata.tables)
         if not completed and (existing or inspector.has_table(RECORDS.name) or inspector.has_table(RUNS.name)):
             raise MigrationError("Unmanaged ER/migration tables already exist. Use a clean target database/schema rather than merging or replacing them.")
         namespace = completed["namespace"] if completed else uuid4()
-        rows, archive, manifest, warnings = build_plan(source_rows, storage, namespace, admin_username, now)
+        if mode == "er":
+            from migrations.er_copy import build_er_plan
+            rows, manifest, warnings = build_er_plan(source_rows, storage, namespace)
+        else:
+            rows, _, manifest, warnings = build_plan(source_rows, storage, namespace, admin_username, now)
+        archive = archive_source(schema, source_rows, namespace, mode)
+        mapped_tables = set(Base.metadata.tables) if mode == "er" else set(TARGET_MAP)
+        unmapped = sorted(set(source_rows) - mapped_tables)
+        if unmapped:
+            warnings.append("Original tables retained in the migration archive: " + ", ".join(unmapped))
         source_digest = digest({"schema": schema, "rows": source_rows, "files": manifest, "admin_username": admin_username})
         if completed:
             if target.dialect.name == "postgresql":
@@ -355,8 +451,12 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
                 raise MigrationError("The migration archive changed. Check it against your backup.")
             return {"status": "already_applied", "counts": completed["counts"], "warnings": completed["warnings"]}
         validate_plan(rows)
+        mapped_counts = Counter(item["source_table"] for item in archive if item["target_table"] is not None)
+        coverage = {name: {"source_rows": len(records), "archived_rows": len(records),
+                          "mapped_rows": mapped_counts[name]}
+                    for name, records in source_rows.items()}
         counts = {"source": {name: len(records) for name, records in source_rows.items()},
-                  "target": {name: len(records) for name, records in rows.items()}, "archived_rows": len(archive)}
+                  "target": {name: len(records) for name, records in rows.items()}, "archived_rows": len(archive), "coverage": coverage}
         if dry_run:
             return {"status": "ready", "counts": counts, "warnings": warnings}
         Base.metadata.create_all(target)
@@ -375,8 +475,12 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
             target_digest=digest(snapshot), source_schema=schema, counts=counts, warnings=warnings, completed_at=now))
         for record in archive:
             target.execute(insert(RECORDS).values(**record))
+        saved_archive = [dict(row) for row in target.execute(select(RECORDS).where(RECORDS.c.version == VERSION)
+            .order_by(RECORDS.c.source_table, RECORDS.c.source_id)).mappings()]
+        if digest(saved_archive) != digest(sorted(archive, key=lambda row: (row["source_table"], row["source_id"]))):
+            raise MigrationError("Source archive reconciliation failed; the entire migration will be rolled back.")
         # Detect unexpected database changes even on a separate source connection.
-        final_schema, final_rows = read_legacy(source)
+        final_schema, final_rows, _ = read_source(source, mode, exclude=exclude)
         if digest({"schema": final_schema, "rows": final_rows}) != digest({"schema": schema, "rows": source_rows}):
             raise MigrationError("The source changed during migration; all target changes will be rolled back.")
     return {"status": "applied", "counts": counts, "warnings": warnings}
