@@ -143,9 +143,9 @@ def test_full_graph_failure_rolls_back_and_can_retry(complete_source, tmp_path, 
     source, storage = complete_source
     real_insert, calls = shipment_v1.insert_rows, 0
 
-    def fail_after_insert(connection, rows):
+    def fail_after_insert(connection, rows, progress=None):
         nonlocal calls
-        real_insert(connection, rows)
+        real_insert(connection, rows, progress=progress)
         calls += 1
         if calls == 2:
             raise RuntimeError("Injected complete-import failure")

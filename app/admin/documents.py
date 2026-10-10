@@ -18,7 +18,8 @@ from werkzeug.utils import secure_filename
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Consignment, db
+from app.models import db
+from app import orm as models
 
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 DOCUMENTS = {'pod': ('pod_image', 'pod_original_name'), 'invoice': ('invoice_file', 'invoice_original_name')}
@@ -39,6 +40,7 @@ def open_stored_document(value):
         with io.BytesIO(content) as source:
             yield source, name
     else:
+        value = value.removeprefix('local:')
         root = Path(current_app.instance_path, 'uploads').resolve()
         path = (root / value).resolve()
         if not path.is_relative_to(root):
@@ -176,6 +178,11 @@ def cleanup_documents(values):
     from app.admin.consignment_controller import _delete_pod_file
     for value in set(values):
         try:
+            if models.using_er():
+                from app.er_adapter import File
+                canonical = value if value.startswith(('local:', 'supabase:')) else 'local:' + value
+                if db.session.query(File).filter_by(storage_path=canonical).first():
+                    continue
             _delete_pod_file(value)
         except Exception:
             current_app.logger.exception('Unable to remove obsolete shipment document')
@@ -185,11 +192,15 @@ def _response_error(message, status=400):
     return jsonify(success=False, message=message), status
 
 
-@admin_bp.route('/admin/consignments/<int:consignment_id>/<any(pod,invoice):kind>', methods=['GET', 'POST', 'DELETE'])
+@admin_bp.route('/admin/consignments/<consignment_id>/<any(pod,invoice):kind>', methods=['GET', 'POST', 'DELETE'])
 @limiter.limit('30 per minute', methods=['POST', 'DELETE'])
 @require_admin
 def consignment_document(consignment_id, kind):
-    row = db.session.get(Consignment, consignment_id)
+    try:
+        consignment_id = models.record_id(consignment_id)
+    except ValueError:
+        return _response_error('Consignment not found.', 404)
+    row = db.session.get(models.Consignment, consignment_id)
     if not row:
         return _response_error('Consignment not found.', 404)
     field, name_field = DOCUMENTS[kind]

@@ -11,7 +11,7 @@
     const notice=sessionStorage.getItem('mis-notice');
     if(notice){sessionStorage.removeItem('mis-notice');show(notice);}
     function value(name){return form.elements.namedItem(name).value;}
-    function content(){return {name:value('name'),notes:value('notes'),format:value('format'),filters:{period:value('period'),start:value('start'),end:value('end'),company:value('company'),status:value('status'),search:value('search')},columns:Array.from(form.querySelectorAll('[name="columns"]:checked')).map(input=>input.value)};}
+    function content(){return {view_id:loaded,name:value('name'),notes:value('notes'),format:value('format'),filters:{period:value('period'),start:value('start'),end:value('end'),company:value('company'),status:value('status'),search:value('search')},columns:Array.from(form.querySelectorAll('[name="columns"]:checked')).map(input=>input.value)};}
     async function action(work){
         if(busy)return;
         busy=true;form.querySelectorAll('button').forEach(button=>button.disabled=true);
@@ -40,7 +40,7 @@
         action(async()=>{await adminUI.request(`${config.view_url}/${loaded}`,content(),'PUT');reload('Saved view updated.');});
     });
     document.querySelectorAll('[data-load-view]').forEach(button=>button.addEventListener('click',()=>{
-        const view=config.views.find(row=>row.id===Number(button.dataset.loadView));loaded=view.id;
+        const view=config.views.find(row=>String(row.id)===button.dataset.loadView);loaded=view.id;
         form.elements.namedItem('search').value=view.filters.search||'';
         Object.entries(view.filters).forEach(([key,val])=>{form.elements.namedItem(key).value=val;});
         for(const key of ['name','notes','format'])form.elements.namedItem(key).value=view[key];
@@ -60,7 +60,7 @@
     }));
     const modal=new bootstrap.Modal(document.getElementById('report-edit-modal'));
     document.querySelectorAll('[data-edit-report]').forEach(button=>button.addEventListener('click',()=>{
-        editing=config.reports.find(row=>row.id===Number(button.dataset.editReport));
+        editing=config.reports.find(row=>String(row.id)===button.dataset.editReport);
         document.getElementById('report-edit-name').value=editing.name;
         document.getElementById('report-edit-notes').value=editing.notes;
         adminUI.alert('report-edit-error','');modal.show();

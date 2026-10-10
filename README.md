@@ -107,7 +107,7 @@ app/
   static/fonts/               Icon fonts
   static/images/logo.png      Original branding
 tests/                        Standalone application tests
-database/                     Next-version ER models; separate from the active app
+database/                     UUID shipment/client/document/MIS business models
 docs/database-model.md        Database design, integrity rules and migration mapping
 docs/database-schema.sql      Generated PostgreSQL schema for empty staging databases
 migrations/001_shipment_database.py  One-command schema and existing-data migration
@@ -154,8 +154,20 @@ local `instance/admin.db`; use `MIGRATION_SOURCE_DATABASE_URL` for a remote
 source or `--source-local` for another local file. The command creates all ten
 model tables, imports legacy or full-model data and archives every source row,
 including extra tables/columns. It preserves existing history and relationships.
-Omitting `--apply` performs a preflight. The migration does not switch the
-dashboard's backend or move file storage automatically.
+Omitting `--apply` performs a preflight. The dashboard detects the migrated ER
+tables automatically; run `upgrade-db` once to restore archived screen fields,
+then restart the app. File storage stays in its original location.
+
+If the migration already printed **Migration committed**, do not import again:
+
+```bash
+AUTO_CREATE_TABLES=false python -m flask --app wsgi:app upgrade-db
+AUTO_CREATE_TABLES=false python -m flask --app wsgi:app check-db
+```
+
+`upgrade-db` creates ER screen bookkeeping and preserves imported data. It does
+not recreate the old `consignment` or `company` tables. Existing local databases
+continue using their original schema. See [dashboard cutover](docs/database-migration.md#dashboard-cutover).
 
 By default, this app creates a **new, empty** SQLite database at
 `instance/admin.db` and stores uploaded PODs and invoices in `instance/uploads/`.

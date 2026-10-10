@@ -117,8 +117,9 @@ primary key. Empty tables appear in the source schema/count report.
 
 The JSON archive retains decimal/date/timestamp representations; unexpected
 binary column values are base64 encoded. The original source tables remain
-intact. Archived fields need a backend adapter or explicit schema extension
-before the UI can use them from the new database.
+intact. The dashboard adapter copies the existing screen fields into
+`admin_record_extras` during `upgrade-db`. This support table is separate from
+the ten business tables; subsequent edits never change the original archive.
 
 The result includes `source` and `target` row counts and `coverage` for each
 source table: `source_rows`, `archived_rows` and `mapped_rows`. Every source row
@@ -165,7 +166,7 @@ Missing/unreadable files, escaping paths, unsupported external URLs, symlinked
 inventory entries and mismatched metadata stop the whole import. Storage paths
 use canonical `local:relative/path` or `supabase:bucket/object/path` references;
 noncanonical ER paths are converted with their original values archived. The
-future backend file adapter must parse these references. Existing full-model
+dashboard file adapter parses these references. Existing full-model
 file UUIDs, actors, upload times and original filenames are preserved.
 
 ## Atomicity, RLS and repeat runs
@@ -178,7 +179,8 @@ run's tables and data on PostgreSQL and SQLite; it does not leave a partial impo
 On PostgreSQL, **RLS is enabled on all 12 new tables**, with no browser policies.
 The owner/backend can operate normally; ordinary API roles cannot read rows even
 if default grants exist. This does not create Supabase Auth accounts or enforce
-team roles in the current Flask app.
+Supabase Auth roles. The Flask dashboard checks its configured login against
+an active `admin_users` identity; viewer identities cannot perform write requests.
 
 Repeating the same command verifies source/file checksums, destination records
 and the archive and reports `already_applied`, without duplicates. Changes to
@@ -187,9 +189,60 @@ of overwriting data. This is a one-time import, not ongoing synchronization.
 
 ## Dashboard cutover
 
-The dashboard currently uses legacy tables, integer IDs and its existing upload
-adapter. This migration does not change the running app's backend. Switching it
-to the new database requires the UUID models, history/audit writes, canonical
-file references, role checks and backup enumeration to be updated together.
-Keep the original database and complete upload backup available until that
-backend cutover is tested.
+The current dashboard supports both the original local schema and the migrated
+UUID schema. When `consignments` exists and the old `consignment` table does not,
+it selects the ER backend automatically. A local database containing both versions
+continues using its operational legacy tables. `ADMIN_DATABASE_MODEL=er` or
+`legacy` can explicitly select a model when needed.
+
+Once the importer has printed **Migration committed**, keep `DATABASE_URL`
+pointing to that destination and run:
+
+```bash
+git pull --ff-only origin standalone-admin
+AUTO_CREATE_TABLES=false python -m flask --app wsgi:app upgrade-db
+AUTO_CREATE_TABLES=false python -m flask --app wsgi:app check-db
+```
+
+Stop the old Flask process and restart it using your usual command. The expected
+messages are **ER backend ready**, then **Connected to postgresql** and **All
+required admin tables and columns are present**. Do not run the importer again
+or recreate legacy tables to fix a dashboard `UndefinedTable` error.
+
+`upgrade-db` adds `admin_record_extras`, with RLS enabled on PostgreSQL, and
+restores archived PIN/tag/date/ETA values, report notes and view update times.
+This repeatable step leaves the original import archive and ten business tables
+intact. Existing support fields from an ER-to-ER import are restored too.
+
+The dashboard uses UUIDs for editing, companies, labels and MIS; document links
+use `files` and versioned `shipment_documents`. Replaced PODs/invoices retain
+historical file versions. Status changes and record edits add shipment events
+and audit entries in the same database transaction. Status event times describe
+when the change was recorded; they do not invent actual pickup/delivery times.
+Complete backups include the model, support table, original-row archive and
+current/historical/unlinked uploaded files. Saved reports retain their fixed
+snapshots; newly generated reports can link their selected saved view.
+
+Login still uses `ADMIN_USERNAME` and the environment password/hash. The matching
+`admin_users` row must be active. This is not a new multi-user login system or a
+Supabase Auth integration. Keep original databases and upload backups available
+until you have checked the migrated dashboard.
+
+## Progress and bounded waits
+
+The migration prints elapsed-time progress to the terminal immediately, while
+its final JSON report stays on standard output. Messages identify source reads,
+file checks, table imports, archive verification and commit. Inserts are batched
+(up to 200 matching records per batch) to reduce network round trips.
+
+PostgreSQL connections have a 10-second connection timeout. Each transaction
+sets a 15-second lock timeout and a 120-second statement timeout; these are
+limits per lock/statement, not a deadline for the entire import. Network failure
+and lock errors stop the run instead of waiting silently indefinitely. Storage
+inventory and checksums can still take time on larger collections.
+
+If interrupted or disconnected, wait until the process exits before retrying.
+Do not assume success or rollback without a confirmation: a retry verifies any
+completed import and does not duplicate it. Once the dashboard begins editing
+the destination, repeat-import verification appropriately reports changed data;
+it is not a synchronization command.

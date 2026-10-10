@@ -57,7 +57,14 @@ def check_admin_credentials(username: str, password: str) -> bool:
         return False
 
     try:
-        return check_password_hash(ADMIN_PASSWORD_HASH, password)
+        if not check_password_hash(ADMIN_PASSWORD_HASH, password):
+            return False
+        from app.orm import using_er
+        if using_er():
+            from app.models import db
+            from database.models import AdminUser
+            return db.session.query(AdminUser).filter_by(username=username, active=True).first() is not None
+        return True
     except Exception:
         return False
 
@@ -86,6 +93,16 @@ def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if is_admin_authenticated():
+            from app.orm import using_er
+            if using_er():
+                from app.models import db
+                from database.models import AdminUser
+                user = db.session.query(AdminUser).filter_by(username=session.get(ADMIN_SESSION_USERNAME_KEY), active=True).first()
+                if user is None:
+                    logout_admin()
+                    return jsonify(error='Authentication required'), 401
+                if user.role == 'viewer' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+                    return jsonify(success=False, message='This account has read-only access.'), 403
             return f(*args, **kwargs)
 
         wants_json = (

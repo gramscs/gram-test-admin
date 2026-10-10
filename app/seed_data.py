@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 import click
 from flask.cli import with_appcontext
 
-from app.models import Consignment, db
+from app.models import db
+from app import orm as models
 
 
 @click.command("seed-demo")
@@ -16,7 +17,11 @@ def seed_demo():
     if os.getenv("FLASK_ENV", "development").strip().lower() == "production" or db.engine.dialect.name != "sqlite":
         raise click.ClickException("Demo data is only supported in local SQLite development. Set DATABASE_URL=sqlite:///instance/admin.db for this command.")
 
-    db.create_all()
+    if models.using_er():
+        from app.er_adapter import prepare_backend
+        prepare_backend(db.engine)
+    else:
+        db.create_all()
     today = datetime.now(UTC).date()
     statuses = ["Pickup Scheduled", "In Transit", "Out for Delivery", "Delivered"]
     origins = [("Delhi", "110001"), ("Mumbai", "400001"), ("Kolkata", "700001"), ("Bengaluru", "560001"), ("Chennai", "600001")]
@@ -24,14 +29,14 @@ def seed_demo():
     try:
         for index in range(1, 26):
             number = f"DEMO{index:04d}"
-            if Consignment.query.filter_by(consignment_number=number).first():
+            if models.Consignment.query.filter_by(consignment_number=number).first():
                 continue
             origin, pickup_pin = origins[(index - 1) % len(origins)]
             destination, drop_pin = origins[index % len(origins)]
             status = statuses[(index - 1) % len(statuses)]
             pickup_date = today - timedelta(days=1 + index % 7)
             drop_date = today - timedelta(days=index % 4) if status == "Delivered" else today + timedelta(days=1 + index % 4)
-            db.session.add(Consignment(
+            db.session.add(models.Consignment(
                 consignment_number=number,
                 status=status,
                 pickup_address=f"Demo Warehouse {index}, {origin}",

@@ -38,7 +38,7 @@
         }
     }
     function setRow(row) {
-        shipmentId = row.id > 0 ? row.id : null;
+        shipmentId = row.id && !String(row.id).startsWith('-') ? row.id : null;
         kinds.forEach(kind => {
             revoke(state[kind]);
             const upload = row[kind + '_file_data'] ? {name: row[kind + '_file_name'], type: row[kind + '_file_type'], dataUrl: row[kind + '_file_data']} : null;

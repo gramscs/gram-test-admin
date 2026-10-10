@@ -76,6 +76,7 @@ def create_app(test_config=None):
         RATELIMIT_HEADERS_ENABLED=True,
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
         AUTO_CREATE_TABLES=os.getenv("AUTO_CREATE_TABLES", "false" if production or is_postgres else "true").lower() == "true",
+        ADMIN_DATABASE_MODEL=os.getenv("ADMIN_DATABASE_MODEL", "auto"),
     )
     if is_postgres:
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -90,6 +91,13 @@ def create_app(test_config=None):
     # Use the normalized URI even when it was supplied through test_config.
     app.config["SQLALCHEMY_DATABASE_URI"] = url.render_as_string(hide_password=False)
     db.init_app(app)
+    with app.app_context():
+        if db.engine.dialect.name == 'sqlite':
+            from sqlalchemy import event
+
+            @event.listens_for(db.engine, 'connect')
+            def enforce_sqlite_relations(connection, record):
+                connection.execute('PRAGMA foreign_keys=ON')
     limiter.init_app(app)
 
     from app.admin import admin_bp
@@ -122,12 +130,24 @@ def create_app(test_config=None):
     @app.cli.command("init-db")
     def init_db():
         """Create missing tables; does not import or replace existing records."""
+        from app.orm import using_er
+        if using_er():
+            from app.er_adapter import prepare_backend
+            prepare_backend(db.engine)
+            click.echo("ER backend ready. Existing model tables and data preserved.")
+            return
         db.create_all()
         click.echo("Database tables created.")
 
     @app.cli.command("upgrade-db")
     def upgrade_db():
         """Add admin fields and master tables without deleting records."""
+        from app.orm import using_er
+        if using_er():
+            from app.er_adapter import prepare_backend
+            prepare_backend(db.engine)
+            click.echo("ER backend ready. Archived screen fields restored; original records preserved.")
+            return
         from app.schema_upgrade import upgrade_admin_fields
         changed = upgrade_admin_fields(db.engine)
         db.create_all()
@@ -141,7 +161,8 @@ def create_app(test_config=None):
             db.session.execute(text("SELECT 1"))
             inspector = inspect(db.engine)
             missing = []
-            for table in db.metadata.sorted_tables:
+            from app.orm import tables
+            for table in tables():
                 if not inspector.has_table(table.name):
                     missing.append(f"table {table.name}")
                     continue
@@ -159,6 +180,9 @@ def create_app(test_config=None):
     @app.cli.command("repair-consignment-schema")
     def repair_schema():
         """Add missing shipment columns to an existing PostgreSQL database."""
+        from app.orm import using_er
+        if using_er():
+            raise click.ClickException("This migrated database uses the ER model. Use upgrade-db to prepare its backend.")
         if db.engine.dialect.name != "postgresql":
             raise click.ClickException("This command is only for PostgreSQL.")
         from app.db_maintenance import ensure_consignment_columns
@@ -167,9 +191,15 @@ def create_app(test_config=None):
 
     if app.config["AUTO_CREATE_TABLES"]:
         with app.app_context():
-            if db.engine.dialect.name == "sqlite":
+            from app.orm import using_er
+            if using_er():
+                from app.er_adapter import prepare_backend
+                prepare_backend(db.engine)
+            elif db.engine.dialect.name == "sqlite":
                 from app.schema_upgrade import upgrade_admin_fields
                 upgrade_admin_fields(db.engine)
-            db.create_all()
+                db.create_all()
+            else:
+                db.create_all()
 
     return app

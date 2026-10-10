@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_
 
-from app.models import Company, Consignment
+from app import orm as models
 
 IST = ZoneInfo('Asia/Kolkata')
 STATUSES = ('Pickup Scheduled', 'In Transit', 'Out for Delivery', 'Delivered')
@@ -68,8 +68,13 @@ def normalize_filters(values, today=None):
     if not isinstance(company, (str, int)) or isinstance(company, bool):
         raise ValueError('Choose a valid client.')
     company = str(company)
-    if company not in ('', 'unassigned') and (not company.isdigit() or not Company.query.filter_by(id=int(company)).first()):
-        raise ValueError('This client no longer exists. Choose another client.')
+    if company not in ('', 'unassigned'):
+        try:
+            client_id = models.record_id(company)
+        except ValueError:
+            raise ValueError('This client no longer exists. Choose another client.') from None
+        if not models.Company.query.filter_by(id=client_id).first():
+            raise ValueError('This client no longer exists. Choose another client.')
     status = values.get('status', '')
     if not isinstance(status, str) or status not in ('', *STATUSES, 'No status', 'Other'):
         raise ValueError('Choose a valid shipment status.')
@@ -103,22 +108,22 @@ def search_shipments(query, search):
         return query
     pattern = f'%{search}%'
     return query.filter(or_(
-        *(getattr(Consignment, key).ilike(pattern) for key in (
+        *(getattr(models.Consignment, key).ilike(pattern) for key in (
             'consignment_number', 'status', 'identifier_type', 'pickup_tag', 'drop_tag',
             'pickup_pincode', 'drop_pincode', 'pickup_address', 'drop_address')),
-        Consignment.company.has(Company.name.ilike(pattern)),
+        models.Consignment.company.has(models.Company.name.ilike(pattern)),
     ))
 
 
 def analyze(filters, today=None):
     today = today or datetime.now(IST).date()
-    query = search_shipments(Consignment.query, filters.get('search', ''))
+    query = search_shipments(models.shipment_query(), filters.get('search', ''))
     if filters['company'] == 'unassigned':
-        query = query.filter(Consignment.company_id.is_(None))
+        query = query.filter(models.Consignment.company_id.is_(None))
     elif filters['company']:
-        query = query.filter_by(company_id=int(filters['company']))
+        query = query.filter_by(company_id=models.record_id(filters['company']))
     shipments, excluded = [], 0
-    for row in query.order_by(Consignment.id).all():
+    for row in query.order_by(models.Consignment.id).all():
         if filters['status'] and status_group(row.status) != filters['status']:
             continue
         pickup = parse_date(row.pickup_date)
@@ -216,13 +221,13 @@ def analyze(filters, today=None):
     clients = sorted(clients.values(), key=lambda item: (-item['count'], item['label'].lower()))
     for item in clients:
         item['weight'] = float(item['weight'])
-    company_label = next((item.name for item in Company.query.all() if str(item.id) == filters['company']), 'Unassigned client' if filters['company'] else 'All clients')
+    company_label = next((item.name for item in models.Company.query.all() if str(item.id) == filters['company']), 'Unassigned client' if filters['company'] else 'All clients')
     period_label = f'{filters["start"]} to {filters["end"]}' if filters['start'] else 'All time'
-    return {'metrics': totals, 'saved_total': Consignment.query.count(), 'statuses': [{'label': key, 'count': value} for key, value in counts.items() if value], 'trend': trend, 'grain': grain, 'clients': clients, 'routes': [{'label': key, 'count': value} for key, value in sorted(routes.items(), key=lambda item: (-item[1], item[0]))], 'exceptions': exceptions, 'details': details, 'recent': list(reversed(shipments[-5:])), 'filters': filters, 'period_label': period_label, 'client_label': company_label, 'status_label': filters['status'] or 'All statuses', 'generated_at': datetime.now(IST).strftime('%d %b %Y, %I:%M %p IST'), 'definition': DEFINITION}
+    return {'metrics': totals, 'saved_total': models.shipment_query().count(), 'statuses': [{'label': key, 'count': value} for key, value in counts.items() if value], 'trend': trend, 'grain': grain, 'clients': clients, 'routes': [{'label': key, 'count': value} for key, value in sorted(routes.items(), key=lambda item: (-item[1], item[0]))], 'exceptions': exceptions, 'details': details, 'recent': list(reversed(shipments[-5:])), 'filters': filters, 'period_label': period_label, 'client_label': company_label, 'status_label': filters['status'] or 'All statuses', 'generated_at': datetime.now(IST).strftime('%d %b %Y, %I:%M %p IST'), 'definition': DEFINITION}
 
 
 def filter_options():
-    return {'periods': PERIODS, 'companies': Company.query.order_by(Company.name).all(), 'statuses': (*STATUSES, 'No status', 'Other')}
+    return {'periods': PERIODS, 'companies': models.Company.query.order_by(models.Company.name).all(), 'statuses': (*STATUSES, 'No status', 'Other')}
 
 
 def chart_data(report):

@@ -18,7 +18,7 @@ from sqlalchemy import or_
 
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Company, Consignment
+from app import orm as models
 
 
 # Embed fonts supplied by ReportLab so printing does not depend on local fonts.
@@ -32,12 +32,12 @@ pdfmetrics.registerFontFamily('LabelSans', normal='LabelSans', bold='LabelSansBo
 def _label_rows():
     page = max(1, request.args.get('page', 1, type=int))
     search = request.args.get('search', '').strip()
-    query = Consignment.query
+    query = models.shipment_query()
     if search:
-        query = query.filter(or_(Consignment.consignment_number.ilike(f'%{search}%'), Consignment.company.has(Company.name.ilike(f'%{search}%')),
-                                Consignment.pickup_tag.ilike(f'%{search}%'), Consignment.drop_tag.ilike(f'%{search}%')))
+        query = query.filter(or_(models.Consignment.consignment_number.ilike(f'%{search}%'), models.Consignment.company.has(models.Company.name.ilike(f'%{search}%')),
+                                models.Consignment.pickup_tag.ilike(f'%{search}%'), models.Consignment.drop_tag.ilike(f'%{search}%')))
     total = query.count()
-    return dict(rows=query.order_by(Consignment.id.desc()).offset((page - 1) * 25).limit(25).all(), page=page, total=total, search=search)
+    return dict(rows=query.order_by(models.Consignment.id.desc()).offset((page - 1) * 25).limit(25).all(), page=page, total=total, search=search)
 
 
 @admin_bp.get('/admin/labels')
@@ -122,10 +122,10 @@ def labels_generate():
     # Legacy callers keep barcode output; the new form always sends an explicit choice.
     include_barcode = request.form.get('barcode', '1') != '0'
     try:
-        selected = list(dict.fromkeys(int(value) for value in request.form.getlist('consignment_ids')))
+        selected = list(dict.fromkeys(models.record_id(value) for value in request.form.getlist('consignment_ids')))
         if not selected or len(selected) > 500:
             raise ValueError('Select at least one saved shipment (maximum 500 labels per download).')
-        found = {row.id: row for row in Consignment.query.filter(Consignment.id.in_(selected)).all()}
+        found = {row.id: row for row in models.shipment_query().filter(models.Consignment.id.in_(selected)).all()}
         if len(found) != len(selected):
             raise ValueError('A selected shipment no longer exists. Refresh the list and select again.')
         rows = [found[row_id] for row_id in selected]

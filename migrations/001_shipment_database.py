@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from time import monotonic
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -78,24 +79,32 @@ def main(argv=None):
             from supabase import create_client
             supabase = create_client(supabase_url, supabase_key)
         storage = Storage(args.uploads_dir, supabase, os.getenv("SUPABASE_BUCKET", "pod-uploads"))
+        started = monotonic()
+
+        def report_progress(message):
+            print(f"[{monotonic() - started:.1f}s] {message}", file=sys.stderr, flush=True)
+
         result = migrate(engine, storage, source_engine=source_engine,
                          admin_username=os.getenv("ADMIN_USERNAME", "admin"), dry_run=not args.apply,
-                         fresh_target=True, source_format=args.source_format)
+                         fresh_target=True, source_format=args.source_format, progress=report_progress)
         print(json.dumps(result, indent=2))
         if result["status"] == "ready":
             print("Preflight passed. No database data was changed. Add --apply to run the migration.")
         elif result["status"] == "applied":
-            print("Migration committed: all ten model tables created and all source rows reconciled. Source records and upload bytes were retained. Dashboard backend cutover remains separate.")
+            print("Migration committed: all ten model tables created and all source rows reconciled. Source records and upload bytes were retained. Next: run flask upgrade-db and check-db against this destination, then restart the dashboard. Do not import again.")
         else:
             print("Migration already applied and verified. No duplicate records were added.")
         return 0
     except MigrationError as error:
         print(f"Migration stopped: {error}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("Migration interrupted. No success was confirmed. Retry the same command only after this process exits; a completed import will be verified without duplicates.", file=sys.stderr)
+        return 130
     except Exception:
         # Driver/storage exceptions can contain SQL values, usernames, URLs and
         # passwords. Never print their raw messages or tracebacks to the CLI.
-        print("Migration failed; this run's database writes were rolled back. Check database permissions/connectivity and source data. No credentials were printed.", file=sys.stderr)
+        print("Migration failed before completion could be confirmed. Check database permissions/connectivity and source data, then retry the same command. A completed import will be verified without duplicates. No credentials were printed.", file=sys.stderr)
         return 1
     finally:
         if source_engine is not None:

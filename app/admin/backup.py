@@ -17,6 +17,7 @@ from werkzeug.utils import secure_filename
 
 from app.admin.documents import DOCUMENTS, open_stored_document
 from app.models import db
+from app import orm as models
 
 TABLE_KEYS = {'consignment': 'consignments', 'company': 'companies', 'company_location': 'company_locations',
               'lead': 'leads', 'newsletter_subscriber': 'newsletter_subscribers'}
@@ -27,6 +28,10 @@ class DocumentReadError(Exception):
 
 
 def _json_value(value):
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return value.isoformat() if callable(getattr(value, 'isoformat', None)) else str(value)
@@ -35,7 +40,7 @@ def _json_value(value):
 def collect_admin_data(admin_user):
     """Include every column and row of every application-owned model table."""
     payload, counts = {}, {}
-    for table in db.metadata.sorted_tables:
+    for table in models.tables():
         key = TABLE_KEYS.get(table.name, table.name)
         result = db.session.execute(select(table).order_by(*table.primary_key.columns)).mappings()
         payload[key] = [{name: _json_value(value) for name, value in row.items()} for row in result]
@@ -50,6 +55,7 @@ def _safe_name(name):
 
 
 def _reference_key(value):
+    value = value.removeprefix('local:')
     if value.startswith('supabase:'):
         return value
     try:
@@ -174,7 +180,10 @@ def _sheet(workbook, title, columns, rows):
     for row in rows:
         cells = []
         for name in columns:
-            cell = WriteOnlyCell(sheet, value=row.get(name))
+            value = row.get(name)
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, ensure_ascii=False)
+            cell = WriteOnlyCell(sheet, value=value)
             if isinstance(cell.value, str):
                 cell.data_type = 's'
             cells.append(cell)
@@ -189,7 +198,7 @@ def _workbook(payload, report, table_columns):
         columns = list(table_columns[key])
         if key == 'consignments':
             columns = ['backup_order'] + columns + ['pod_backup_path', 'pod_backup_status', 'invoice_backup_path', 'invoice_backup_status']
-        if key == 'mis_report':
+        if key in ('mis_report', 'mis_reports'):
             columns += ['file_backup_path', 'file_backup_status']
         _sheet(workbook, key, columns, rows)
     columns = ['backup_order', 'consignment_id', 'consignment_number', 'mis_report_id', 'kind', 'source', 'original_name', 'status', 'archive_path', 'bytes', 'sha256', 'message']
@@ -202,31 +211,56 @@ def build_complete_backup(payload):
     buffer = SpooledTemporaryFile(max_size=8*1024*1024, mode='w+b')
     report = {'format_version': 2, 'generated_at': payload['metadata']['generated_at'], 'ordering': 'Consignments ordered by database ID ascending; numeric folder prefixes match backup_order in data and Excel.',
               'documents': [], 'inventory_errors': [], 'storage_scope': ['instance/uploads/', 'configured/referenced Supabase buckets: consignments/ namespace and all directly referenced files']}
-    table_columns = {TABLE_KEYS.get(table.name, table.name): [column.name for column in table.columns] for table in db.metadata.sorted_tables}
+    table_columns = {TABLE_KEYS.get(table.name, table.name): [column.name for column in table.columns] for table in models.tables()}
     referenced = set()
+    er = models.using_er()
+    files_by_id = {item['id']: item for item in payload.get('files', [])}
+    current_documents = {(item['consignment_id'], item['document_type']): item
+                         for item in payload.get('shipment_documents', []) if item['is_current']}
     try:
         with ZipFile(buffer, 'w', ZIP_DEFLATED, allowZip64=True) as archive:
             for order, row in enumerate(payload['consignments'], start=1):
                 row['backup_order'] = order
-                folder = f"documents/{order:06d}_{_safe_name(row['consignment_number'])}_id-{row['id']}"
+                identifier = row.get('consignment_number') or row.get('identifier_value')
+                folder = f"documents/{order:06d}_{_safe_name(identifier)}_id-{row['id']}"
                 for kind, (field, name_field) in DOCUMENTS.items():
                     value = row.get(field)
+                    if er:
+                        doc_type = 'POD' if kind == 'pod' else 'invoice'
+                        doc = current_documents.get((row['id'], doc_type))
+                        file = files_by_id.get(doc['file_id']) if doc else None
+                        value = file['storage_path'] if file else None
+                        if file:
+                            row[name_field] = file['original_filename']
                     if value:
                         referenced.add(_reference_key(value))
                     name = row.get(name_field) or (Path(value).name if value else kind)
                     path = folder + '/' + kind + '_' + _safe_name(name)
                     entry = _add_document(archive, report, value, path, backup_order=order, consignment_id=row['id'],
-                                          consignment_number=row['consignment_number'], kind=kind, source='shipment', original_name=name if value else None)
+                                          consignment_number=identifier, kind=kind, source='shipment', original_name=name if value else None)
                     row[kind + '_backup_path'] = entry['archive_path']
                     row[kind + '_backup_status'] = entry['status']
-            for row in payload.get('mis_report', []):
+            for row in payload.get('mis_report', payload.get('mis_reports', [])):
                 value = row.get('file_ref')
+                if er:
+                    file = files_by_id.get(row['file_id'])
+                    value = file['storage_path'] if file else None
+                    if file:
+                        row['file_name'] = file['original_filename']
                 if value:
                     referenced.add(_reference_key(value))
                 name = row.get('file_name') or Path(value or 'report').name
-                path = f"mis_reports/{row['id']:06d}_" + _safe_name(name)
+                report_key = f"{row['id']:06d}" if isinstance(row['id'], int) else row['id']
+                path = f"mis_reports/{report_key}_" + _safe_name(name)
                 entry = _add_document(archive, report, value, path, mis_report_id=row['id'], kind='mis_report', source='report', original_name=name)
                 row['file_backup_path'], row['file_backup_status'] = entry['archive_path'], entry['status']
+            if er:
+                # Include historical versions and unlinked file records too.
+                for index, file in enumerate(payload['files'], start=1):
+                    value = file['storage_path']
+                    if _reference_key(value) not in referenced:
+                        _add_document(archive, report, value, f"file_history/{index:06d}_" + _safe_name(file['original_filename']), source='file_record', kind='retained_file', file_id=file['id'], original_name=file['original_filename'])
+                        referenced.add(_reference_key(value))
             for index, (value, source) in enumerate(_inventory(referenced, report), start=1):
                 path = f'other_uploads/{index:06d}_' + _safe_name(Path(value).name)
                 _add_document(archive, report, value, path, source=source, kind='unlinked_upload', original_name=Path(value).name)

@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from app.admin import admin_bp
 from app.admin.auth import require_admin
 from app.admin.input_validation import clean_text, email_address, payload, pincode, positive_id
-from app.models import Company, CompanyLocation, db
+from app.models import db
+from app import orm as models
 
 
 def serialize_company(row):
@@ -26,13 +27,13 @@ def companies_panel():
     search = request.args.get('search', '').strip()
     archived = request.args.get('archived') == '1'
     page = max(1, request.args.get('page', 1, type=int))
-    query = Company.query
+    query = models.Company.query
     if not archived:
         query = query.filter_by(active=True)
     if search:
-        query = query.filter(or_(Company.name.ilike(f'%{search}%'), Company.address.ilike(f'%{search}%')))
+        query = query.filter(or_(models.Company.name.ilike(f'%{search}%'), models.Company.address.ilike(f'%{search}%')))
     total = query.count()
-    rows = query.order_by(Company.active.desc(), Company.name.asc()).offset((page-1)*25).limit(25).all()
+    rows = query.order_by(models.Company.active.desc(), models.Company.name.asc()).offset((page-1)*25).limit(25).all()
     return render_template('admin/companies.html', companies=[serialize_company(row) for row in rows], search=search, archived=archived, page=page, total=total)
 
 
@@ -40,13 +41,13 @@ def companies_panel():
 @require_admin
 def companies_options():
     # Archived companies remain available for displaying an existing shipment's client.
-    return jsonify(success=True, companies=[serialize_company(row) for row in Company.query.order_by(Company.name).all()])
+    return jsonify(success=True, companies=[serialize_company(row) for row in models.Company.query.order_by(models.Company.name).all()])
 
 
 def _save_company(company=None):
     data = payload()
     name = clean_text(data, 'name', 200, required=True)
-    duplicate = Company.query.filter(func.lower(Company.name) == name.lower()).first()
+    duplicate = models.Company.query.filter(func.lower(models.Company.name) == name.lower()).first()
     if duplicate and (company is None or duplicate.id != company.id):
         raise ValueError('A company with this name already exists. Edit or restore its master instead.')
     fields = {'name': name, 'address': clean_text(data, 'address', 5000),
@@ -78,16 +79,27 @@ def _save_company(company=None):
         normalized.append((location_id, {'kind': item['kind'], 'label': clean_text(item, 'label', 100, True),
                                         'address': clean_text(item, 'address', 5000, True),
                                         'pincode': pincode(clean_text(item, 'pincode', 6)), 'is_default': default}))
-    company = company or Company()
+    company = company or models.Company()
     for key, value in fields.items():
         setattr(company, key, value)
     company.active = active
+    if models.using_er() and existing:
+        # Release old defaults before replacing them, respecting the ER index.
+        for location in existing.values():
+            location.is_default = False
+        db.session.flush()
+        for id, location in existing.items():
+            if id not in used_ids:
+                from database.models import Consignment as Shipment
+                if db.session.query(Shipment).filter((Shipment.pickup_location_id == id) | (Shipment.drop_location_id == id)).first():
+                    raise ValueError('A location used by a shipment cannot be removed. Keep it or edit its address.')
+                db.session.delete(location)
     new_locations = []
     for location_id, fields in normalized:
         if fields['kind'] not in defaults:
             fields['is_default'] = True
             defaults.add(fields['kind'])
-        location = existing.get(location_id) or CompanyLocation()
+        location = existing.get(location_id) or models.CompanyLocation()
         for key, value in fields.items():
             setattr(location, key, value)
         new_locations.append(location)
@@ -107,10 +119,14 @@ def company_create():
         return jsonify(success=False, message=str(error) if isinstance(error, ValueError) else 'A company with this name already exists.'), 400
 
 
-@admin_bp.put('/admin/companies/<int:company_id>')
+@admin_bp.put('/admin/companies/<company_id>')
 @require_admin
 def company_update(company_id):
-    company = db.session.get(Company, company_id)
+    try:
+        company_id = models.record_id(company_id)
+    except ValueError:
+        return jsonify(success=False, message='Company not found.'), 404
+    company = db.session.get(models.Company, company_id)
     if not company:
         return jsonify(success=False, message='Company not found.'), 404
     try:
@@ -120,14 +136,18 @@ def company_update(company_id):
         return jsonify(success=False, message=str(error) if isinstance(error, ValueError) else 'A company with this name already exists.'), 400
 
 
-@admin_bp.post('/admin/companies/<int:company_id>/archive')
+@admin_bp.post('/admin/companies/<company_id>/archive')
 @require_admin
 def company_archive(company_id):
     try:
         payload()
     except ValueError as error:
         return jsonify(success=False, message=str(error)), 400
-    company = db.session.get(Company, company_id)
+    try:
+        company_id = models.record_id(company_id)
+    except ValueError:
+        return jsonify(success=False, message='Company not found.'), 404
+    company = db.session.get(models.Company, company_id)
     if not company:
         return jsonify(success=False, message='Company not found.'), 404
     company.active = False

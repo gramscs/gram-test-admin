@@ -18,11 +18,15 @@ from sqlalchemy import (
     create_engine, event, inspect, insert, select, text, update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import DBAPIError
 
 from database.models import Base, UTCDateTime
 from migrations.storage import MigrationError, Storage
 
 VERSION = "001_shipment_database"
+LOCK_TIMEOUT_MS = 15_000
+STATEMENT_TIMEOUT_MS = 120_000
+BATCH_SIZE = 200
 LEGACY_TABLES = ("company", "company_location", "consignment", "mis_view", "mis_report", "lead", "newsletter_subscriber")
 COLUMN_MAP = {
     "consignment_number": "identifier_value", "status": "current_status",
@@ -76,9 +80,18 @@ def digest(value):
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+def configure_wait_limits(connection, *, lock_timeout_ms=LOCK_TIMEOUT_MS,
+                          statement_timeout_ms=STATEMENT_TIMEOUT_MS):
+    connection.execute(text("SELECT set_config('lock_timeout', :locks, true), "
+        "set_config('statement_timeout', :statements, true)"),
+        {"locks": f"{lock_timeout_ms}ms", "statements": f"{statement_timeout_ms}ms"})
+
+
 def migration_engine(url):
     from sqlalchemy.engine import make_url
-    settings = {"connect_timeout": 10} if make_url(url).get_backend_name() == "postgresql" else {}
+    settings = {"connect_timeout": 10, "keepalives": 1, "keepalives_idle": 30,
+                "keepalives_interval": 10, "keepalives_count": 3, "tcp_user_timeout": 30_000
+                } if make_url(url).get_backend_name() == "postgresql" else {}
     engine = create_engine(url, hide_parameters=True, pool_pre_ping=True, connect_args=settings)
     if engine.dialect.name not in {"sqlite", "postgresql"}:
         engine.dispose()
@@ -95,6 +108,10 @@ def migration_engine(url):
             # freezes a separate WAL-mode source against concurrent writers.
             # No source DML is performed, but its file must allow locking.
             connection.exec_driver_sql("BEGIN IMMEDIATE")
+    else:
+        @event.listens_for(engine, "begin")
+        def on_postgres_begin(connection):
+            configure_wait_limits(connection)
     return engine
 
 
@@ -119,7 +136,7 @@ def read_legacy(connection):
     return schema, rows
 
 
-def read_source(connection, source_format="auto", *, exclude=()):
+def read_source(connection, source_format="auto", *, exclude=(), progress=None):
     """Inventory every current-schema table; choose the authoritative model.
 
     Extra tables are archived, never silently ignored. In-place legacy retries
@@ -144,6 +161,8 @@ def read_source(connection, source_format="auto", *, exclude=()):
             connection.exec_driver_sql(f"LOCK TABLE {quoted} IN SHARE MODE")
     schema, rows = {}, {}
     for name in names:
+        if progress:
+            progress(f"Reading source table {name}...")
         table = Table(name, MetaData(), autoload_with=connection)
         schema[name] = [{"name": col.name, "type": str(col.type), "nullable": col.nullable,
                          "primary_key": col.primary_key} for col in table.c]
@@ -358,12 +377,33 @@ def build_plan(source_rows, storage, namespace, admin_username, now):
     return rows, archive, manifest, warnings
 
 
-def insert_rows(connection, rows):
-    # SQLAlchemy executemany expects consistent keys per batch. Missing optional
-    # columns are inserted individually, avoiding an accidental default rewrite.
+def insert_batches(connection, table, records, progress=None):
+    # Preserve supplied keys and database defaults; only batch records with
+    # matching keys. Bound batches avoid excessive bind parameters and payloads.
+    batch, keys, inserted = [], None, 0
+
+    def flush():
+        nonlocal inserted
+        connection.execute(insert(table), batch)
+        inserted += len(batch)
+        if progress:
+            progress(f"Imported {table.name}: {inserted}/{len(records)} records.")
+        batch.clear()
+
+    for record in records:
+        if batch and (len(batch) >= BATCH_SIZE or record.keys() != keys):
+            flush()
+        keys = record.keys()
+        batch.append(record)
+    if batch:
+        flush()
+
+
+def insert_rows(connection, rows, progress=None):
     for table in Base.metadata.sorted_tables:
-        for record in rows[table.name]:
-            connection.execute(insert(table).values(**record))
+        if progress:
+            progress(f"Importing {table.name}: {len(rows[table.name])} records...")
+        insert_batches(connection, table, rows[table.name], progress)
 
 
 def validate_plan(rows):
@@ -402,7 +442,26 @@ def target_snapshot(connection):
 
 
 def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_run=False,
-            fresh_target=False, source_format="auto"):
+            fresh_target=False, source_format="auto", progress=None):
+    try:
+        return _migrate(engine, storage, source_engine=source_engine, admin_username=admin_username,
+            dry_run=dry_run, fresh_target=fresh_target, source_format=source_format,
+            progress=progress or (lambda message: None))
+    except DBAPIError as error:
+        code = getattr(error.orig, "pgcode", None)
+        if code == "55P03":
+            raise MigrationError("Database lock wait exceeded 15 seconds. Stop other migration runs and pause app writers, then retry the same command. This run did not complete.") from None
+        if code == "57014":
+            raise MigrationError("A database statement timed out or was cancelled. This run did not complete; retry after checking database activity. No credentials were printed.") from None
+        if engine.dialect.name == "sqlite" or (source_engine is not None and source_engine.dialect.name == "sqlite"):
+            import sqlite3
+            if isinstance(error.orig, sqlite3.OperationalError) and "locked" in str(error.orig).lower():
+                raise MigrationError("The local source database is busy. Pause the app and other migration runs, then retry the same command.") from None
+        raise
+
+
+def _migrate(engine, storage, *, source_engine, admin_username, dry_run,
+             fresh_target, source_format, progress):
     if not admin_username or not admin_username.strip():
         raise MigrationError("ADMIN_USERNAME must not be blank.")
     now = datetime.now(UTC)
@@ -410,22 +469,28 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
             (engine.dialect.name == source_engine.dialect.name == "sqlite" and engine.url.database == source_engine.url.database)):
         raise MigrationError("A fresh target requires a separate source database.")
     with ExitStack() as stack:
+        progress("Connecting to the source database...")
         source = stack.enter_context(source_engine.begin()) if source_engine is not None else None
+        progress("Connecting to the destination database...")
         target = stack.enter_context(engine.begin())
         source = source if source is not None else target
         if target.dialect.name == "postgresql":
+            progress("Acquiring the migration lock (maximum wait: 15 seconds)...")
             target.execute(text("SELECT pg_advisory_xact_lock(723910042001)"))
+        progress("Inspecting the destination schema...")
         inspector = inspect(target)
         completed = target.execute(select(RUNS).where(RUNS.c.version == VERSION)).mappings().first() if inspector.has_table(RUNS.name) else None
         if fresh_target and not completed and inspector.get_table_names():
             raise MigrationError("The target must be fresh: its current schema already contains tables. No existing tables will be replaced.")
         exclude = set(Base.metadata.tables) | set(LEDGER.tables) if source is target else ()
         mode = "legacy" if source is target and source_format == "auto" else source_format
-        schema, source_rows, mode = read_source(source, mode, exclude=exclude)
+        schema, source_rows, mode = read_source(source, mode, exclude=exclude, progress=progress)
+        progress(f"Source inventoried: {sum(map(len, source_rows.values()))} records in {len(source_rows)} tables.")
         existing = set(inspector.get_table_names()) & set(Base.metadata.tables)
         if not completed and (existing or inspector.has_table(RECORDS.name) or inspector.has_table(RUNS.name)):
             raise MigrationError("Unmanaged ER/migration tables already exist. Use a clean target database/schema rather than merging or replacing them.")
         namespace = completed["namespace"] if completed else uuid4()
+        progress("Checking uploaded files and preparing the import...")
         if mode == "er":
             from migrations.er_copy import build_er_plan
             rows, manifest, warnings = build_er_plan(source_rows, storage, namespace)
@@ -438,6 +503,7 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
             warnings.append("Original tables retained in the migration archive: " + ", ".join(unmapped))
         source_digest = digest({"schema": schema, "rows": source_rows, "files": manifest, "admin_username": admin_username})
         if completed:
+            progress("An earlier import exists; verifying its source, destination and archive...")
             if target.dialect.name == "postgresql":
                 tables = sorted(set(Base.metadata.tables) | set(LEDGER.tables))
                 quoted = ", ".join(target.dialect.identifier_preparer.quote(name) for name in tables)
@@ -450,6 +516,7 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
                     .order_by(RECORDS.c.source_table, RECORDS.c.source_id)).mappings()]) != digest(sorted(archive, key=lambda row: (row["source_table"], row["source_id"]))):
                 raise MigrationError("The migration archive changed. Check it against your backup.")
             return {"status": "already_applied", "counts": completed["counts"], "warnings": completed["warnings"]}
+        progress("Validating all records and relationships in an isolated database...")
         validate_plan(rows)
         mapped_counts = Counter(item["source_table"] for item in archive if item["target_table"] is not None)
         coverage = {name: {"source_rows": len(records), "archived_rows": len(records),
@@ -459,28 +526,35 @@ def migrate(engine, storage, *, source_engine=None, admin_username="admin", dry_
                   "target": {name: len(records) for name, records in rows.items()}, "archived_rows": len(archive), "coverage": coverage}
         if dry_run:
             return {"status": "ready", "counts": counts, "warnings": warnings}
+        progress("Creating all ten model tables, indexes and integrity rules...")
         Base.metadata.create_all(target)
+        progress("Creating migration bookkeeping tables...")
         LEDGER.create_all(target)
         if target.dialect.name == "postgresql":
+            progress("Enabling row-level security on the new tables...")
             # Supabase's public schema may have browser/API grants by default.
             # Owner/backend access still works; other roles have no policies.
             for name in sorted(set(Base.metadata.tables) | set(LEDGER.tables)):
                 quoted = target.dialect.identifier_preparer.quote(name)
                 target.exec_driver_sql(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY")
-        insert_rows(target, rows)
+        insert_rows(target, rows, progress=progress)
+        progress("Checking destination record counts...")
         snapshot = target_snapshot(target)
         if {name: len(records) for name, records in snapshot.items()} != counts["target"]:
             raise MigrationError("Target reconciliation failed; the entire migration will be rolled back.")
         target.execute(insert(RUNS).values(version=VERSION, namespace=namespace, source_digest=source_digest,
             target_digest=digest(snapshot), source_schema=schema, counts=counts, warnings=warnings, completed_at=now))
-        for record in archive:
-            target.execute(insert(RECORDS).values(**record))
+        progress(f"Archiving all {len(archive)} original source records...")
+        insert_batches(target, RECORDS, archive, progress)
+        progress("Verifying the complete original-record archive...")
         saved_archive = [dict(row) for row in target.execute(select(RECORDS).where(RECORDS.c.version == VERSION)
             .order_by(RECORDS.c.source_table, RECORDS.c.source_id)).mappings()]
         if digest(saved_archive) != digest(sorted(archive, key=lambda row: (row["source_table"], row["source_id"]))):
             raise MigrationError("Source archive reconciliation failed; the entire migration will be rolled back.")
         # Detect unexpected database changes even on a separate source connection.
+        progress("Rechecking the source before committing...")
         final_schema, final_rows, _ = read_source(source, mode, exclude=exclude)
         if digest({"schema": final_schema, "rows": final_rows}) != digest({"schema": schema, "rows": source_rows}):
             raise MigrationError("The source changed during migration; all target changes will be rolled back.")
+        progress("Committing the database transaction...")
     return {"status": "applied", "counts": counts, "warnings": warnings}

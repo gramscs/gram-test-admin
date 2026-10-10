@@ -54,8 +54,9 @@ python -m database.schema
 
 This command does not load `.env`, read `DATABASE_URL`, connect to Supabase,
 or change any database. The model has separate SQLAlchemy metadata, so
-the current app's `init-db`, `upgrade-db`, `check-db`, and backup behavior
-do not change merely because this package exists.
+importing the package alone does not create tables. The dashboard selects these
+models when it detects a migrated target, with separate support metadata for
+existing screen fields.
 
 ## Rules built into the database
 
@@ -120,28 +121,27 @@ unknown. New authenticated actions should populate the real user ID. The
 diagram has no password/auth-provider fields: `admin_users` does not itself
 implement login. No password is stored in this model.
 
-## Backend work needed before using this version
+## Dashboard backend
 
-The database migration is available; application cutover is a separate change. The current routes,
-JavaScript, imports, reports, uploads and backup use the old schema and numeric
-IDs. They must be updated together before the app can use these tables.
+The dashboard supports both legacy local tables and the migrated UUID model.
+See [dashboard cutover](database-migration.md#dashboard-cutover) for the one-time
+`upgrade-db` preparation after importing. Its adapter preserves existing screen
+fields in `admin_record_extras` and leaves the original-row archive unchanged.
 
-The backend must save a status change, its event and its audit entry in the
-same transaction. The model does not automatically produce history or audit
-records for arbitrary writes. Late events require an explicit rule for whether
-they change `current_status`; no event timestamp should be fabricated. File
-uploads must be validated, written to private storage, then linked; failed
-database saves require staged-upload cleanup. Backups must include every file
-version and every generated report, including unlinked retained files.
+Flask writes shipment status changes, their events and audit entries in one
+transaction. These hooks apply to dashboard ORM writes; raw SQL and other apps
+must record their own history. Event timestamps reflect when the dashboard
+observed the status change, without inventing physical pickup/delivery times.
+Validated uploads link canonical `files` records and versioned documents;
+failed saves clean up staged uploads. Complete backups include historical
+versions, reports, unlinked files, business tables and migration bookkeeping.
 
-Roles here are data, not enforced permissions. Authentication/authorization
-must map the logged-in person to an active user and check their role in Flask.
-For Supabase, enable RLS or keep these tables outside exposed API schemas;
-grant no browser/anonymous access for this internal backend-only app. Choose
-the backend database role and grants before production use. This schema
-does not create RLS policies, storage buckets, auth accounts or login grants.
-The migration enables RLS on the new PostgreSQL business/archive tables with
-no browser policies; the standalone generated SQL does not enable it.
+Authentication uses the configured environment login/password. In ER mode the
+identity must match an active `admin_users` row; a viewer is denied write requests.
+The model itself stores no password or auth-provider credentials. The importer
+and backend preparation enable PostgreSQL RLS with no browser policies. Backend
+connections need owner privileges or an appropriate privileged role; the schema
+SQL alone does not create policies, grants, buckets or Supabase Auth accounts.
 
 ## Existing-data migration plan
 
@@ -172,11 +172,11 @@ delivery times from planned dates. Unproven links/times remain null.
 **The diagram omits some fields used by today's app:** shipment PIN/tag
 snapshots, the separate drop-date/ETA/debug values, report notes, and saved-view
 update times. The migration retains these in the target original-row archive
-and leaves the original tables intact. Agree on explicit schema extensions or
-an archive adapter before cutover. Saved-view links for old reports also cannot be
+and leaves the original source tables intact. The dashboard restores these
+editable screen values into its separate `admin_record_extras` support table. Saved-view links for old reports also cannot be
 reconstructed reliably, so leave `view_id` null when unknown.
 
-After the importer and UUID-aware backend are implemented, compare every
+Before switching your running app, compare every
 record count, shipment identifier/client, report snapshot and file checksum
 against the source. Test the dashboard, labels, imports, downloads and full
 backup on the migrated staging copy. Cut over during a controlled write pause,

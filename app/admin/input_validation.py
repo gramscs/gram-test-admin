@@ -38,9 +38,8 @@ def pincode(value):
 
 
 def positive_id(value):
-    if isinstance(value, bool) or not str(value).isdigit() or int(value) < 1:
-        raise ValueError("Invalid record ID.")
-    return int(value)
+    from app.orm import record_id
+    return record_id(value)
 
 
 def selected_ids(value, maximum=500):

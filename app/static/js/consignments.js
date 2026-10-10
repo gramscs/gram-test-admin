@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         var row = Object.assign({}, baseRow, {
-            id: tr.dataset.id ? Number(tr.dataset.id) : (baseRow.id || null),
+            id: tr.dataset.id ? String(tr.dataset.id) : (baseRow.id || null),
             consignment_number: tr.querySelector('.consignment_number') ? tr.querySelector('.consignment_number').value.trim() : (baseRow.consignment_number || ''),
             identifier_type: tr.querySelector('.identifier_type') ? tr.querySelector('.identifier_type').value : (baseRow.identifier_type || 'LRN'),
             pieces: tr.querySelector('.pieces') ? tr.querySelector('.pieces').value : (baseRow.pieces || 1),
@@ -195,7 +195,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function buildRowData(source, fallbackId) {
         var data = source || {};
         return {
-            id: data.id || fallbackId || null,
+            id: data.id || fallbackId ? String(data.id || fallbackId) : null,
             company_id: data.company_id ?? null, company_name: data.company_name || '',
             consignment_number: data.consignment_number || "",
             identifier_type: data.identifier_type || "LRN", pieces: data.pieces ?? 1,
@@ -228,11 +228,11 @@ document.addEventListener("DOMContentLoaded", function () {
     function getRowDataFromTr(tr) {
         try {
             if (tr && tr.querySelector('.consignment_number')) {
-                return buildRowData(syncRowDataset(tr), tr.dataset.id ? Number(tr.dataset.id) : null);
+                return buildRowData(syncRowDataset(tr), tr.dataset.id ? String(tr.dataset.id) : null);
             }
-            return buildRowData(JSON.parse(tr.dataset.row || "{}"), tr.dataset.id ? Number(tr.dataset.id) : null);
+            return buildRowData(JSON.parse(tr.dataset.row || "{}"), tr.dataset.id ? String(tr.dataset.id) : null);
         } catch (error) {
-            return buildRowData({}, tr.dataset.id ? Number(tr.dataset.id) : null);
+            return buildRowData({}, tr.dataset.id ? String(tr.dataset.id) : null);
         }
     }
 
@@ -279,8 +279,8 @@ document.addEventListener("DOMContentLoaded", function () {
         var deleteButton = tr.querySelector(".delete-row");
         if (deleteButton) {
             deleteButton.addEventListener("click", function () {
-                var existingId = tr.dataset.id ? Number(tr.dataset.id) : null;
-                if (existingId && existingId > 0) {
+                var existingId = tr.dataset.id ? String(tr.dataset.id) : null;
+                if (existingId && !String(existingId).startsWith('-')) {
                     adminState.addDeleted(existingId);
                 }
                 // Remove from local tracking
@@ -385,13 +385,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         var rawRows = collectRows();
         adminState.pendingRows.forEach(function (row, id) {
-            if (!adminState.deletedIds.has(id) && !rawRows.some(item => item.id === id)) rawRows.push(row);
+            if (!adminState.deletedIds.has(id) && !rawRows.some(item => String(item.id) === String(id))) rawRows.push(row);
         });
         // Include staged local rows that may not be present in DOM (user hasn't navigated to last page)
         try {
             var staged = (adminState && adminState.locallyAddedRows) ? adminState.locallyAddedRows : [];
             staged.forEach(function (s) {
-                var exists = rawRows.some(function (r) { return r.id === s.id; });
+                var exists = rawRows.some(function (r) { return String(r.id) === String(s.id); });
                 if (!exists) rawRows.push(s);
             });
         } catch (e) {}
@@ -408,7 +408,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // Delegate network call to adminAPI
             var data = await adminAPI.saveRows(saveUrl, {
-                rows: rawRows,
+                rows: rawRows.map(function (row) {
+                    return Object.assign({}, row, {id: String(row.id || '').startsWith('-') ? null : row.id});
+                }),
                 deleted_ids: Array.from(adminState.deletedIds)
             });
 
@@ -511,7 +513,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // Add fetched rows
             data.rows.forEach(function (row) {
-                if (!adminState.deletedIds.has(row.id)) addRow(adminState.pendingRows.get(row.id) || row, false);
+                if (!adminState.deletedIds.has(String(row.id))) addRow(adminState.pendingRows.get(String(row.id)) || row, false);
             });
 
             // Include locally staged rows in totals (but only render them when showing the last page)

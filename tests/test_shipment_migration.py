@@ -261,10 +261,10 @@ def test_failure_after_ddl_rolls_back_tables_and_can_retry(populated, monkeypatc
     real_insert = shipment_v1.insert_rows
     calls = 0
 
-    def fail_during_apply(connection, rows):
+    def fail_during_apply(connection, rows, progress=None):
         nonlocal calls
         calls += 1
-        real_insert(connection, rows)
+        real_insert(connection, rows, progress=progress)
         if calls == 2:
             raise RuntimeError("Injected failure after all target rows were inserted")
 

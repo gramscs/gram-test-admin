@@ -14,7 +14,8 @@ from sqlalchemy.exc import DatabaseError, OperationalError, ProgrammingError
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.models import Company, Consignment, db
+from app.models import db
+from app import orm as models
 from app.admin.documents import prepare_row_documents, store_document_changes, cleanup_documents
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,7 @@ def _delete_pod_file(pod_value):
         return
 
     upload_folder = os.path.join(current_app.instance_path, "uploads")
+    pod_value = pod_value.removeprefix('local:')
     pod_path = os.path.normpath(os.path.join(upload_folder, pod_value))
     if Path(pod_path).resolve().is_relative_to(Path(upload_folder).resolve()) and os.path.isfile(pod_path):
         try:
@@ -241,8 +243,8 @@ def _serialize_consignment(consignment):
 @require_admin
 def consignments_panel():
     try:
-        total = Consignment.query.count()
-        consignments = [] if total > 500 else Consignment.query.order_by(Consignment.id.asc()).limit(200).all()
+        total = models.shipment_query().count()
+        consignments = [] if total > 500 else models.shipment_query().order_by(models.Consignment.id.asc()).limit(200).all()
         rows = [_serialize_consignment(row) for row in consignments]
         return render_template("admin/consignments.html", consignments=rows)
     except (OperationalError, DatabaseError, ProgrammingError):
@@ -280,10 +282,10 @@ def consignments_list_api():
         sort_order = "asc" if sort_order.lower() == "asc" else "desc"
 
         from app.admin.reporting import search_shipments
-        query = search_shipments(Consignment.query, search)
+        query = search_shipments(models.shipment_query(), search)
 
         total = query.count()
-        sort_column = getattr(Consignment, sort_by)
+        sort_column = getattr(models.Consignment, sort_by)
         query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
         rows = query.offset((page - 1) * per_page).limit(per_page).all()
 
@@ -359,7 +361,7 @@ def consignments_import_excel():
 
     existing_numbers = {
         row[0]
-        for row in Consignment.query.with_entities(Consignment.consignment_number).all()
+        for row in models.shipment_query().with_entities(models.Consignment.consignment_number).all()
         if row and row[0]
     }
 
@@ -375,7 +377,7 @@ def consignments_import_excel():
             skipped_duplicates += 1
             continue
 
-        consignment = Consignment(
+        consignment = models.Consignment(
             consignment_number=consignment_number,
             status=row_data.get("status") or "",
             pickup_address=row_data.get("pickup_address"),
@@ -430,7 +432,7 @@ def consignments_export_excel():
     ]
     sheet.append(headers)
 
-    rows = Consignment.query.order_by(Consignment.id.asc()).all()
+    rows = models.shipment_query().order_by(models.Consignment.id.asc()).all()
     for consignment in rows:
         sheet.append([
             getattr(consignment, "consignment_number", None),
@@ -443,7 +445,7 @@ def consignments_export_excel():
             getattr(consignment, "drop_address", None),
             consignment.identifier_type, consignment.pieces,
             consignment.chargeable_weight, consignment.chargeable_volume,
-            consignment.company_id, consignment.company.name if consignment.company else None,
+            models.export_id(consignment.company_id), consignment.company.name if consignment.company else None,
         ])
 
     buffer = io.BytesIO()
@@ -505,10 +507,13 @@ def _normalize_shipment_fields(row, existing=None):
     else:
         from app.admin.input_validation import positive_id
         company_id = positive_id(company_id)
-        company = db.session.get(Company, company_id)
+        company = db.session.get(models.Company, company_id)
         if not company or (not company.active and company_id != getattr(existing, "company_id", None)):
             raise ValueError("Choose an active client company. Existing archived links can be retained.")
         fields["company_id"] = company_id
+    if models.using_er() and fields['company_id'] != getattr(existing, 'company_id', None):
+        fields['pickup_location_id'] = None
+        fields['drop_location_id'] = None
     for name in ("chargeable_weight", "chargeable_volume"):
         raw = value(name, None)
         if raw in (None, ""):
@@ -568,10 +573,10 @@ def consignments_save():
     try:
         for deleted_id in deleted_ids if isinstance(deleted_ids, list) else []:
             try:
-                deleted_id_int = int(deleted_id)
+                deleted_id_int = models.record_id(deleted_id)
             except (TypeError, ValueError):
                 continue
-            consignment = db.session.get(Consignment, deleted_id_int)
+            consignment = db.session.get(models.Consignment, deleted_id_int)
             if consignment:
                 obsolete_files.extend(value for value in (consignment.pod_image, consignment.invoice_file) if value)
                 db.session.delete(consignment)
@@ -596,14 +601,17 @@ def consignments_save():
 
             consignment = None
             row_id = row.get("id")
+            # Older browser sessions send negative IDs for unsaved staged rows.
+            if str(row_id).startswith('-') and str(row_id)[1:].isdigit():
+                row_id = None
             if row_id not in (None, ""):
                 try:
-                    consignment = db.session.get(Consignment, int(row_id))
+                    consignment = db.session.get(models.Consignment, models.record_id(row_id))
                 except (TypeError, ValueError):
                     errors.append({"index": index, "field": "id", "message": "Invalid consignment id."})
                     continue
 
-            existing_by_number = Consignment.query.filter_by(consignment_number=consignment_number).first()
+            existing_by_number = models.shipment_query().filter_by(consignment_number=consignment_number).first()
             if consignment and existing_by_number and existing_by_number.id != consignment.id:
                 errors.append({
                     "index": index,
@@ -613,7 +621,7 @@ def consignments_save():
                 continue
 
             if not consignment:
-                consignment = existing_by_number or Consignment()
+                consignment = existing_by_number or models.Consignment()
 
             if len(consignment_number) > 64 or not consignment_number.isascii() or not all(32 <= ord(char) <= 126 for char in consignment_number):
                 errors.append({"index": index, "field": "consignment_number", "message": "Identifier must contain 1–64 printable ASCII characters."})
@@ -641,7 +649,7 @@ def consignments_save():
 
         for consignment, changes in document_plans:
             store_document_changes(consignment, changes, created_files, obsolete_files)
-        total = Consignment.query.count()
+        total = models.shipment_query().count()
         db.session.commit()
         cleanup_documents(obsolete_files)
         return jsonify({
