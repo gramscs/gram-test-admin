@@ -110,6 +110,7 @@ tests/                        Standalone application tests
 database/                     Next-version ER models; separate from the active app
 docs/database-model.md        Database design, integrity rules and migration mapping
 docs/database-schema.sql      Generated PostgreSQL schema for empty staging databases
+migrations/001_shipment_database.py  One-command schema and existing-data migration
 run.py                        Local server entry point
 wsgi.py                       Production server entry point
 .env.example                  Configuration template
@@ -140,6 +141,19 @@ history, versioned documents, file metadata, MIS snapshots and audit records.
 Review the [PostgreSQL schema](docs/database-schema.sql) and migration mapping
 there. This design is not applied to the running app automatically; the
 current database and uploads remain unchanged.
+
+To create the new schema and import existing records in one run, follow the
+[migration instructions](docs/database-migration.md):
+
+```bash
+python migrations/001_shipment_database.py --apply
+```
+
+It uses the configured database, preserves original tables and archives every
+original row. If local SQLite data is being imported into Supabase, set the
+target `DATABASE_URL` securely and add `--source-local instance/admin.db`.
+Omitting `--apply` performs a preflight. The migration does not switch the
+dashboard's backend or move file storage automatically.
 
 By default, this app creates a **new, empty** SQLite database at
 `instance/admin.db` and stores uploaded PODs and invoices in `instance/uploads/`.

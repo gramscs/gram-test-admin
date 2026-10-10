@@ -5,6 +5,10 @@ version. It is a concrete SQLAlchemy model and a tested PostgreSQL schema.
 The running dashboard still uses `app/models.py`; its database and uploads
 have not been migrated or changed.
 
+A [single-run migration](database-migration.md) now creates this model and
+copies existing data, including a complete original-row archive. It is run
+explicitly and is not part of app startup or `upgrade-db`.
+
 ## In simple language
 
 The frontend is the screen you operate. Flask is the backend that receives
@@ -116,7 +120,7 @@ implement login. No password is stored in this model.
 
 ## Backend work needed before using this version
 
-This is a database design, not an application cutover. The current routes,
+The database migration is available; application cutover is a separate change. The current routes,
 JavaScript, imports, reports, uploads and backup use the old schema and numeric
 IDs. They must be updated together before the app can use these tables.
 
@@ -134,6 +138,8 @@ For Supabase, enable RLS or keep these tables outside exposed API schemas;
 grant no browser/anonymous access for this internal backend-only app. Choose
 the backend database role and grants before production use. This schema
 does not create RLS policies, storage buckets, auth accounts or login grants.
+The migration enables RLS on the new PostgreSQL business/archive tables with
+no browser policies; the standalone generated SQL does not enable it.
 
 ## Existing-data migration plan
 
@@ -163,9 +169,9 @@ delivery times from planned dates. Unproven links/times remain null.
 
 **The diagram omits some fields used by today's app:** shipment PIN/tag
 snapshots, the separate drop-date/ETA/debug values, report notes, and saved-view
-update times. Preserve these in the original read-only tables/backup and agree
-on explicit schema extensions or a retained-data adapter before cutover; do
-not silently drop them. Saved-view links for old reports also cannot be
+update times. The migration retains these in the target original-row archive
+and leaves the original tables intact. Agree on explicit schema extensions or
+an archive adapter before cutover. Saved-view links for old reports also cannot be
 reconstructed reliably, so leave `view_id` null when unknown.
 
 After the importer and UUID-aware backend are implemented, compare every
