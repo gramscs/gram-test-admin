@@ -11,7 +11,7 @@ Every confirmed user has full panel access. Audit profiles are created automatic
 credentials and account status stay in Supabase Auth. Apply migration 004 if needed
 and enable signup using [the Supabase Auth setup guide](docs/supabase-authentication.md).
 
-Requires Python 3.12. The local setup command creates a private `.env` from
+Requires Python 3.14. The local setup command creates a private `.env` from
 [.env.example](.env.example), preserves existing values, generates `SECRET_KEY`
 only if absent, and securely prompts for missing Supabase credentials. Configure
 `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`, and
