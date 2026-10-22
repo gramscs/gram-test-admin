@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 import httpx
-from werkzeug.security import generate_password_hash
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 
@@ -13,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from app.models import db
+from auth_support import AUTH_USER_ID, FakeAuth, sign_in, sign_out
 
 
 class MemoryBucket:
@@ -89,6 +89,16 @@ def isolated_storage(monkeypatch):
     return client
 
 
+@pytest.fixture(autouse=True)
+def isolated_auth(monkeypatch):
+    import requests
+    remote = FakeAuth()
+    monkeypatch.setenv('SUPABASE_ANON_KEY', 'test-anon-key')
+    monkeypatch.setenv('SECRET_KEY', 'test-session-key-not-for-deployment')
+    monkeypatch.setattr(requests, 'request', remote.request)
+    return remote
+
+
 @pytest.fixture
 def app(monkeypatch, isolated_storage):
     test_url_value = os.getenv("ER_TEST_DATABASE_URL", "").strip()
@@ -110,11 +120,11 @@ def app(monkeypatch, isolated_storage):
     database_engine = create_engine(test_url, pool_pre_ping=True, connect_args=connect_args)
     from database.models import Base
     Base.metadata.create_all(database_engine)
+    from app.auth_sessions import AuthBase
+    AuthBase.metadata.create_all(database_engine)
     from migrations.shipment_v1 import LEDGER
     LEDGER.create_all(database_engine)
     monkeypatch.setenv("FLASK_ENV", "development")
-    monkeypatch.setenv("ADMIN_USERNAME", "admin")
-    monkeypatch.setenv("ADMIN_PASSWORD_HASH", generate_password_hash("test-admin-password"))
     monkeypatch.setenv("DATABASE_URL", test_url.render_as_string(hide_password=False))
     application = create_app({
         "TESTING": True,
@@ -128,11 +138,8 @@ def app(monkeypatch, isolated_storage):
     })
     from database.models import AdminUser
     with application.app_context():
-        db.session.add(AdminUser(username="admin", role="administrator", active=True))
+        db.session.add(AdminUser(username="admin", role="administrator", active=True, supabase_user_id=AUTH_USER_ID))
         db.session.commit()
-    # Authentication settings are loaded once per process in the copied module.
-    from app.admin import auth
-    monkeypatch.setattr(auth, "ADMIN_PASSWORD_HASH", generate_password_hash("test-admin-password"))
     yield application
     with application.app_context():
         db.session.remove()
@@ -150,7 +157,7 @@ def client(app):
 
 @pytest.fixture
 def admin_client(client):
-    response = client.post("/admin/login", data={"username": "admin", "password": "test-admin-password"})
+    response = sign_in(client)
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/dashboard")
     return client

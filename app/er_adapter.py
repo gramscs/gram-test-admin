@@ -131,14 +131,9 @@ for _model, _fields in ((MisView, {'filters_json': 'filters', 'columns_json': 's
 def actor_id():
     if not has_request_context():
         return None
-    username = session.get('admin_username')
-    if not username:
-        return None
-    with db.session.no_autoflush:
-        user = db.session.query(AdminUser).filter_by(username=username, active=True).first()
-    if user is None:
-        raise ValueError('The signed-in admin has no active identity in this database. Check ADMIN_USERNAME.')
-    return user.id
+    from flask import g
+    user = getattr(g, 'admin_user', None)
+    return user.id if user else None
 
 
 def register_file(reference, original_name=None, mime=None):

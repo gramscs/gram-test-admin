@@ -30,7 +30,10 @@
         <section class="nav-group" aria-label="Data and account">
           <h2 class="nav-caption">Data & account</h2>
           <a href="{{ url_for('admin.generate_backup') }}" class="nav-link"><i class="fa fa-database" aria-hidden="true"></i><span>Complete backup</span></a>
-          <a href="{{ url_for('admin.logout') }}" class="nav-link"><i class="fa fa-sign-out" aria-hidden="true"></i><span>Logout</span></a>
+          <form method="post" action="{{ url_for('admin.logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ auth_csrf_token() }}" />
+            <button type="submit" class="nav-link border-0 bg-transparent w-100 text-start"><i class="fa fa-sign-out" aria-hidden="true"></i><span>Logout</span></button>
+          </form>
         </section>
       </nav>
     </div>
@@ -41,7 +44,7 @@
       {% include 'admin/_theme_toggle.html' %}
       <span class="topbar-divider" aria-hidden="true"></span>
       <span class="admin-avatar" aria-hidden="true">{{ (session.get('admin_username') or 'A')[:1] | upper }}</span>
-      <span class="admin-account">{{ session.get('admin_username') or 'Admin' }}<small>Administrator</small></span>
+      <span class="admin-account">{{ session.get('admin_username') or 'Admin' }}<small>{{ g.admin_user.role | title if g.admin_user else 'User' }}</small></span>
     </div>
   </header>
   <main class="main-content" id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>

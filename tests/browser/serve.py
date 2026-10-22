@@ -5,9 +5,10 @@ from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
-from werkzeug.security import generate_password_hash
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from auth_support import AUTH_USER_ID, FakeAuth
 
 
 class BrowserBucket:
@@ -68,9 +69,11 @@ def main():
     from app.er_adapter import prepare_backend
 
     Base.metadata.create_all(engine)
+    from app.auth_sessions import AuthBase
+    AuthBase.metadata.create_all(engine)
     prepare_backend(engine)
     with Session(engine) as session:
-        session.add(AdminUser(username="admin", role="administrator", active=True))
+        session.add(AdminUser(username="admin", role="administrator", active=True, supabase_user_id=AUTH_USER_ID))
         company = Company(name="System Test Client", registered_address="Mumbai office")
         session.add(company)
         session.add_all(Consignment(
@@ -90,13 +93,15 @@ def main():
     os.environ.update(
         DATABASE_URL=app_url.render_as_string(hide_password=False),
         FLASK_ENV="development",
-        ADMIN_USERNAME="admin",
-        ADMIN_PASSWORD="system-test-only",
-        ADMIN_PASSWORD_HASH=generate_password_hash("system-test-only"),
+        SUPABASE_ANON_KEY="test-anon-key",
         SUPABASE_URL="https://browser-test.supabase.co",
         SUPABASE_KEY="browser-test-key",
         SUPABASE_MIS_BUCKET="mis-reports",
     )
+    import requests
+    auth_remote = FakeAuth('https://browser-test.supabase.co')
+    auth_remote.passwords['admin@example.test'] = 'system-test-only'
+    requests.request = auth_remote.request
     import supabase
     supabase.create_client = lambda *_: client
     from app import create_app

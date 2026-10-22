@@ -6,10 +6,14 @@ It does not keep application data in local database or file storage.
 
 ## Configure and run
 
+Sign-in uses Supabase Auth email/password accounts linked to active application
+users. Shared environment passwords are no longer accepted. Apply migration 004
+and link your test account using [the Supabase Auth setup guide](docs/supabase-authentication.md).
+
 Requires Python 3.12. Copy [.env.example](.env.example) to `.env` and configure
-`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SECRET_KEY`, and
-`ADMIN_PASSWORD_HASH`. The database URL must point to PostgreSQL. Supabase
-Storage must contain private `pod-uploads`, `invoice-uploads`, and
+`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`, and
+`SECRET_KEY`. The database URL must point to PostgreSQL. Supabase
+Storage must contain private `pod-uploads`, `invoice-uploads`, `lr-uploads`, and
 `mis-reports` buckets (or the bucket names configured in `.env`).
 
 Install dependencies and start the app:

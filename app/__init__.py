@@ -1,6 +1,7 @@
 """Standalone admin application; no dependency on the public website."""
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import click
@@ -36,8 +37,8 @@ def create_app(test_config=None):
     database_url = str(overrides.pop("SQLALCHEMY_DATABASE_URI", "")).strip() or os.getenv("DATABASE_URL", "").strip()
     if production and not (secret_key or overrides.get("SECRET_KEY")):
         raise RuntimeError("Set SECRET_KEY before starting in production.")
-    if production and not os.getenv("ADMIN_PASSWORD_HASH", "").strip():
-        raise RuntimeError("Set ADMIN_PASSWORD_HASH before starting in production.")
+    if production and not (overrides.get('SUPABASE_ANON_KEY') or os.getenv('SUPABASE_ANON_KEY', '').strip()):
+        raise RuntimeError('Set SUPABASE_ANON_KEY before starting in production.')
     if database_url.startswith("postgres://"):
         database_url = "postgresql://" + database_url[len("postgres://"):]
     placeholder_markers = ("[YOUR_PASSWORD]", "[YOUR-PASSWORD]", "POOLER_HOST", "your_password")
@@ -56,13 +57,19 @@ def create_app(test_config=None):
     )
     if is_postgres and is_supabase and "sslmode" not in url.query:
         url = url.update_query_dict({"sslmode": "require"})
+    if not (secret_key or overrides.get('SECRET_KEY')):
+        raise RuntimeError('Set SECRET_KEY to a secure random value before starting.')
     app.config.update(
-        SECRET_KEY=secret_key or "dev-local-secret-key",
+        SECRET_KEY=secret_key,
+        SUPABASE_URL=os.getenv('SUPABASE_URL', '').strip().rstrip('/'),
+        SUPABASE_ANON_KEY=os.getenv('SUPABASE_ANON_KEY', '').strip(),
         SQLALCHEMY_DATABASE_URI=url.render_as_string(hide_password=False),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=production,
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+        SESSION_REFRESH_EACH_REQUEST=False,
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI") or os.getenv("REDIS_URL") or "memory://",
         RATELIMIT_HEADERS_ENABLED=True,
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
@@ -86,6 +93,8 @@ def create_app(test_config=None):
 
     from app.admin import admin_bp
     app.register_blueprint(admin_bp)
+    from app.admin.auth import csrf_token
+    app.context_processor(lambda: {'auth_csrf_token': csrf_token})
     from app.admin.document_lifecycle import purge_removed_documents
     app.cli.add_command(purge_removed_documents)
 
@@ -142,7 +151,8 @@ def create_app(test_config=None):
             inspector = inspect(db.engine)
             missing = []
             from app.orm import tables
-            for table in tables():
+            from app.auth_sessions import AuthSession
+            for table in [*tables(), AuthSession.__table__]:
                 if not inspector.has_table(table.name):
                     missing.append(f"table {table.name}")
                     continue
@@ -154,12 +164,25 @@ def create_app(test_config=None):
             raise click.ClickException("Database connection failed. Check DATABASE_URL, network access, and Supabase project status.") from None
         click.echo(f"Connected to {db.engine.dialect.name}.")
         if missing:
-            raise click.ClickException("Missing required database structure: " + ", ".join(missing))
+            raise click.ClickException("Missing required database structure: " + ", ".join(missing)
+                + '. Supabase authentication requires migration 004_supabase_authentication.')
         document_types = next((item['sqltext'] for item in inspector.get_check_constraints('shipment_documents')
                                if item['name'] == 'ck_shipment_documents_valid_type'), '')
         if "'LR'" not in document_types:
             raise click.ClickException('Lorry Receipt documents require migration 003. Run python migrations/003_lorry_receipts.py --apply against this database.')
         click.echo("All required admin tables and columns are present. No data was changed.")
+
+    @app.cli.command('check-auth')
+    def check_auth():
+        """Read Supabase's Auth settings without signing in or changing users."""
+        from app.supabase_auth import AuthRejected, AuthUnavailable, check_configuration
+        try:
+            check_configuration()
+        except AuthRejected:
+            raise click.ClickException('Supabase rejected the Auth API key. Check SUPABASE_ANON_KEY.') from None
+        except AuthUnavailable as error:
+            raise click.ClickException(str(error)) from None
+        click.echo('Supabase Auth is reachable and its Email provider is enabled. No users or sessions were created.')
 
     @app.cli.command("check-storage")
     def check_storage():

@@ -1,3 +1,4 @@
+from auth_support import sign_in, sign_out
 import csv
 import io
 import json
@@ -146,10 +147,10 @@ def test_report_failure_cleans_new_file_and_preserves_existing_history(app, admi
 
 
 def test_mis_auth_and_cross_origin_mutations(client, admin_client):
-    client.get('/admin/logout')
+    sign_out(client)
     assert client.get('/admin/mis').status_code==302
     assert client.post('/admin/mis/reports',json={'name':'Test'}).status_code==401
-    client.post('/admin/login',data={'username':'admin','password':'test-admin-password'})
+    sign_in(client)
     assert client.post('/admin/mis/views',json={'name':'Test'},headers={'Origin':'https://other.example'}).status_code==403
 
 

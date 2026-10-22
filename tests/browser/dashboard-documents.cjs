@@ -27,7 +27,7 @@ if (!base || !process.env.SYSTEM_TEST_PASSWORD || !['127.0.0.1', 'localhost'].in
     }
     try {
         await page.goto(base + '/admin/login');
-        await page.locator('[name=username]').fill(process.env.SYSTEM_TEST_USERNAME || 'admin');
+        await page.locator('[name=email]').fill(process.env.SYSTEM_TEST_EMAIL || 'admin@example.test');
         await page.locator('[name=password]').fill(process.env.SYSTEM_TEST_PASSWORD);
         await page.locator('button[type=submit]').click();
         company = (await (await page.request.post(base + '/admin/companies', {data: {name: prefix + ' Client'}})).json()).company;

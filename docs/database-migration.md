@@ -6,6 +6,27 @@ local persistence.
 
 ## Upgrade an existing application database
 
+### Version 004: Supabase authentication
+
+Follow [the Supabase Auth setup guide](supabase-authentication.md) for environment
+settings, first-user linking and verification. The versioned upgrade adds a
+nullable unique `admin_users.supabase_user_id` UUID and the private
+`admin_auth_sessions` support table. Existing user IDs, roles, records and audit
+references are preserved. No users are automatically admitted to the app.
+
+Use `python migrations/004_supabase_authentication.py` for a read-only preflight
+and add `--apply` to apply. Alternatively run the entire
+[`migrations/sql/004_supabase_authentication.sql`](../migrations/sql/004_supabase_authentication.sql)
+file in the intended Supabase project's SQL Editor. Both paths write the same
+migration revision transactionally and can be rerun without resetting sessions.
+Existing incompatible structures or missing structures for a recorded revision
+stop the operation. Pulling code alone does not apply this upgrade.
+
+Application rollback requires restoring the previous application's deployment
+and settings; keep the additive schema in place. Never drop linked user IDs or
+business records to roll back authentication. Reverting code reintroduces its
+previous authentication behavior; review that deliberately before deploying it.
+
 ### Version 003: Lorry Receipt documents
 
 LR attachments use the existing `shipment_documents` / `files` tables with

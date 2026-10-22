@@ -15,7 +15,7 @@ if (!base || !process.env.SYSTEM_TEST_PASSWORD || !['127.0.0.1', 'localhost'].in
     let row;
     try {
         await page.goto(base + '/admin/login');
-        await page.locator('[name=username]').fill('admin');
+        await page.locator('[name=email]').fill('admin@example.test');
         await page.locator('[name=password]').fill(process.env.SYSTEM_TEST_PASSWORD);
         await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         await page.goto(base + '/admin/shipments');

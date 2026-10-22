@@ -45,7 +45,7 @@ function pdf() {
     }
     async function cancel() {await modal.getByRole('button', {name: 'Cancel', exact: true}).click(); await modal.waitFor({state: 'hidden'});}
     try {
-        await page.goto(base + '/admin/login'); await page.locator('[name=username]').fill(process.env.SYSTEM_TEST_USERNAME || 'admin');
+        await page.goto(base + '/admin/login'); await page.locator('[name=email]').fill(process.env.SYSTEM_TEST_EMAIL || 'admin@example.test');
         await page.locator('[name=password]').fill(process.env.SYSTEM_TEST_PASSWORD); await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         const saved = await page.request.post(base + '/admin/consignments/save', {data: {rows: [prefix, prefix + '-EXTRA'].map(consignment_number => ({consignment_number, identifier_type: 'AWB', pieces: 4, pickup_address: 'Keep this pickup', status: 'In Transit'}))}});
         assert.equal(saved.status(), 200);

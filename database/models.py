@@ -90,6 +90,7 @@ class AdminUser(UUIDRecord, Base):
     )
 
     username: Mapped[str] = mapped_column(String(120), unique=True)
+    supabase_user_id: Mapped[UUID | None] = mapped_column(Uuid, unique=True)
     role: Mapped[str] = mapped_column(String(20), default="operator", server_default="operator")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     shipment_events: Mapped[list["ShipmentEvent"]] = relationship(back_populates="recorded_by_user", passive_deletes="all")
