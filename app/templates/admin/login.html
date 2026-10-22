@@ -22,8 +22,10 @@
         <div class="mb-3"><label for="password" class="form-label">Password</label><input type="password" id="password" name="password" class="form-control" required autocomplete="current-password" placeholder="Enter password" /></div>
         <button type="submit" class="btn btn-primary login-btn">Sign In <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></button>
       </form>
+      <p class="login-footnote">Need an account? <a href="{{ url_for('admin.signup') }}">Create account</a></p>
       <p class="login-footnote">Gram SCS · Shipments. Labels. Client companies.</p>
     </div>
   </main>
+  <script src="{{ url_for('static', filename='js/admin/auth.js') }}"></script>
 </body>
 </html>

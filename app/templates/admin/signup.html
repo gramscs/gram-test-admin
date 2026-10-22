@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create account – Gram SCS</title>
+  {% include 'admin/_theme_head.html' %}
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <div class="login-topline justify-content-end">{% include 'admin/_theme_toggle.html' %}</div>
+    <div class="surface-panel login-shell">
+      <div class="login-header">
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Gram SCS Logo" />
+        <span class="page-eyebrow">OPERATIONS WORKSPACE</span>
+        <h1>Create account</h1><p>Register to access the Gram SCS panel.</p>
+      </div>
+      {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+      {% if submitted %}
+      <div class="alert alert-success" role="status">Registration submitted. Check your email if confirmation is required, then sign in. If you already have an account, sign in with your existing password.</div>
+      {% else %}
+      <form method="POST" action="{{ url_for('admin.signup') }}">
+        <input type="hidden" name="csrf_token" value="{{ auth_csrf_token() }}" />
+        <div class="mb-3"><label for="full_name" class="form-label">Full name</label><input type="text" id="full_name" name="full_name" class="form-control" required autofocus maxlength="120" autocomplete="name" value="{{ full_name|default('') }}" /></div>
+        <div class="mb-3"><label for="email" class="form-label">Email address</label><input type="email" id="email" name="email" class="form-control" required maxlength="254" autocomplete="username" value="{{ email|default('') }}" /></div>
+        <div class="mb-3"><label for="password" class="form-label">Password</label><input type="password" id="password" name="password" class="form-control" required minlength="8" maxlength="4096" autocomplete="new-password" /><div class="form-text">Use at least 8 characters. Additional project password requirements may apply.</div></div>
+        <div class="mb-3"><label for="confirm_password" class="form-label">Confirm password</label><input type="password" id="confirm_password" name="confirm_password" class="form-control" required minlength="8" maxlength="4096" autocomplete="new-password" /></div>
+        <button type="submit" class="btn btn-primary login-btn">Create account</button>
+      </form>
+      {% endif %}
+      <p class="login-footnote">Already registered? <a href="{{ url_for('admin.login') }}">Sign in</a></p>
+    </div>
+  </main>
+</body>
+</html>

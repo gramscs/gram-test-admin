@@ -83,6 +83,10 @@ def utcnow():
 
 
 class AdminUser(UUIDRecord, Base):
+    """Application audit profile; Supabase Auth owns account credentials/status.
+
+    Legacy role/active columns are retained without enforcing RBAC at present.
+    """
     __tablename__ = "admin_users"
     __table_args__ = (
         CheckConstraint("trim(username) <> ''", name="username_not_blank"),

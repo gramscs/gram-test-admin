@@ -1,4 +1,4 @@
-"""Real login/session/role checks with Supabase's HTTP boundary mocked."""
+"""Real login/session checks with Supabase's HTTP boundary mocked."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -45,13 +45,11 @@ def test_supabase_login_uses_email_public_key_and_opaque_cookie(app, client, iso
         assert 'token_data' not in str(backup)
 
 
-@pytest.mark.parametrize('reason', ['password', 'unlinked', 'unconfirmed', 'anonymous', 'banned'])
-def test_invalid_or_unapproved_accounts_never_get_a_session(app, client, isolated_auth, reason):
+@pytest.mark.parametrize('reason', ['password', 'unconfirmed', 'anonymous', 'banned'])
+def test_invalid_accounts_never_get_a_session(app, client, isolated_auth, reason):
     password = 'wrong' if reason == 'password' else 'test-admin-password'
     user = isolated_auth.users['admin@example.test']
-    if reason == 'unlinked':
-        user['id'] = str(uuid4())
-    elif reason == 'unconfirmed':
+    if reason == 'unconfirmed':
         user['email_confirmed_at'] = None
     elif reason == 'anonymous':
         user['is_anonymous'] = True
@@ -100,13 +98,11 @@ def test_logout_deletes_server_session_and_replay_is_rejected(app, admin_client,
     assert copied.get('/admin/consignments/list', headers=API).status_code == 401
 
 
-@pytest.mark.parametrize('change', ['inactive', 'expired', 'wrong_subject', 'revoked'])
-def test_session_checks_active_state_expiry_and_verified_identity(app, admin_client, isolated_auth, change):
+@pytest.mark.parametrize('change', ['expired', 'wrong_subject', 'revoked'])
+def test_session_checks_expiry_and_verified_identity(app, admin_client, isolated_auth, change):
     with app.app_context():
         record = db.session.execute(select(AuthSession)).scalar_one()
-        if change == 'inactive':
-            db.session.get(AdminUser, record.admin_user_id).active = False
-        elif change == 'expired':
+        if change == 'expired':
             record.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         elif change == 'wrong_subject':
             isolated_auth.users['admin@example.test']['id'] = str(uuid4())
@@ -175,17 +171,16 @@ def test_provider_outage_fails_closed_without_leaking_secrets(app, admin_client,
         assert db.session.query(AuthSession).count() == 1  # An outage does not silently revoke the current session.
 
 
-def test_viewer_role_and_audit_identity_remain_application_controlled(app, admin_client):
+def test_legacy_role_and_status_do_not_restrict_access_and_audit_identity_is_verified(app, admin_client):
     with app.app_context():
         user = db.session.query(AdminUser).filter_by(supabase_user_id=AUTH_USER_ID).one()
         identifier = user.id
         user.role = 'viewer'
+        user.active = False
         db.session.commit()
     assert admin_client.get('/admin/consignments/list', headers=API).status_code == 200
-    assert admin_client.post('/admin/consignments/save', json={'rows': []}).status_code == 403
-    with app.app_context():
-        db.session.get(AdminUser, identifier).role = 'operator'
-        db.session.commit()
+    assert admin_client.post('/admin/consignments/save', json={'rows': []}).status_code == 200
+    assert sign_in(admin_client).status_code == 302
     with admin_client.session_transaction() as state:
         state['admin_username'] = 'impersonated-admin'
     saved = admin_client.post('/admin/consignments/save', json={'rows': [{'consignment_number': 'AUTH-001'}]})

@@ -1,6 +1,6 @@
 """Supabase HTTP fixtures for isolated unit and browser test applications."""
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 AUTH_USER_ID = UUID('00000000-0000-4000-8000-000000000001')
 
@@ -26,7 +26,15 @@ class FakeAuth:
         self.calls.append((method, url, headers, json))
         path = url.split('/auth/v1/', 1)[1]
         status, result = 200, {}
-        if path == 'token?grant_type=password':
+        if path == 'signup':
+            email = json['email']
+            if email in self.users:
+                status, result = 422, {'code': 'user_already_exists'}
+            else:
+                result = {'id': str(uuid4()), 'email_confirmed_at': None, 'user_metadata': json['data']}
+                self.users[email] = result
+                self.passwords[email] = json['password']
+        elif path == 'token?grant_type=password':
             email = json['email']
             if self.passwords.get(email) != json['password'] or email not in self.users:
                 status = 400

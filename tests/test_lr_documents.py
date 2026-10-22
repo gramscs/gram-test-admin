@@ -347,7 +347,7 @@ def test_sql_editor_migration_rejects_unexpected_or_missing_types(app, admin_cli
     assert storage.objects == baseline
 
 
-def test_outdated_preview_and_viewer_cannot_replace_an_lr(app, admin_client, storage):
+def test_outdated_preview_cannot_replace_an_lr_regardless_of_legacy_role(app, admin_client, storage):
     row = save(admin_client)
     response, _ = preview(admin_client, [row])
     document = response.json['documents'][0]
@@ -359,8 +359,10 @@ def test_outdated_preview_and_viewer_cannot_replace_an_lr(app, admin_client, sto
     with app.app_context():
         db.session.query(AdminUser).filter_by(username='admin').one().role = 'viewer'
         db.session.commit()
-    assert upload(admin_client, document).status_code == 403
+    assert upload(admin_client, document).status_code == 409
     assert storage.objects == baseline
+    response, _ = preview(admin_client, [row])
+    assert upload(admin_client, response.json['documents'][0], expected_reference=changed.json['lr_file']).status_code == 200
 
 
 def test_large_lr_upload_download_and_backup_never_spool_to_disk(app, admin_client, storage, monkeypatch):

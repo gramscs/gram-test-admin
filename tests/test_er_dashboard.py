@@ -208,23 +208,18 @@ def test_staged_negative_ids_save_as_new_uuid_records(migrated_admin):
     assert len(rows) == 2 and all('-' in row['id'] and not row['id'].startswith('-') for row in rows)
 
 
-def test_er_authorization_checks_active_identity_and_viewer_writes(migrated_admin):
+def test_er_legacy_profile_fields_do_not_gate_supabase_members(migrated_admin):
     app, client, storage, destination = migrated_admin
     from sqlalchemy import update
     users = Base.metadata.tables['admin_users']
     with destination.begin() as connection:
         connection.execute(update(users).where(users.c.username == 'admin').values(role='viewer'))
     assert client.get('/admin/consignments/list').status_code == 200
-    assert client.post('/admin/consignments/save', json={'rows': []}).status_code == 403
-    row = client.get('/admin/consignments/list').json['rows'][0]
-    for kind in ('pod', 'invoice'):
-        path = '/admin/consignments/' + row['id'] + '/' + kind
-        assert client.post(path, headers={'Accept': 'application/json'}).status_code == 403
-        assert client.delete(path, json={'expected_reference': None}).status_code == 403
+    assert client.post('/admin/consignments/save', json={'rows': []}).status_code == 200
     with destination.begin() as connection:
         connection.execute(update(users).where(users.c.username == 'admin').values(active=False))
-    assert client.get('/admin/consignments/list', headers={'Accept': 'application/json'}).status_code == 401
-    assert sign_in(client).status_code == 401
+    assert client.get('/admin/consignments/list', headers={'Accept': 'application/json'}).status_code == 200
+    assert sign_in(client).status_code == 302
 
 
 def test_er_reimport_restores_latest_extras_without_mutating_archives(migrated_admin, tmp_path):

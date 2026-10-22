@@ -6,9 +6,10 @@ It does not keep application data in local database or file storage.
 
 ## Configure and run
 
-Sign-in uses Supabase Auth email/password accounts linked to active application
-users. Shared environment passwords are no longer accepted. Apply migration 004
-and link your test account using [the Supabase Auth setup guide](docs/supabase-authentication.md).
+Register through **Create account** and sign in using Supabase Auth email/password.
+Every confirmed user has full panel access. Audit profiles are created automatically;
+credentials and account status stay in Supabase Auth. Apply migration 004 if needed
+and enable signup using [the Supabase Auth setup guide](docs/supabase-authentication.md).
 
 Requires Python 3.12. The local setup command creates a private `.env` from
 [.env.example](.env.example), preserves existing values, generates `SECRET_KEY`

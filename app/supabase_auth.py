@@ -4,6 +4,7 @@ Never reuse the privileged Storage client for a user's authentication session.
 Errors deliberately omit provider responses, passwords, keys and bearer tokens.
 """
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -19,6 +20,16 @@ class AuthRejected(Exception):
 
 class AuthUnavailable(Exception):
     pass
+
+
+class RegistrationRejected(AuthRejected):
+    """Only fixed, safe validation messages may be shown to the registrant."""
+
+
+@dataclass(frozen=True)
+class SupabaseIdentity:
+    id: UUID
+    full_name: str = ''
 
 
 def validate_public_key(key):
@@ -50,13 +61,26 @@ def _call(method, path, *, token=None, payload=None):
     headers = {'apikey': key, 'Accept': 'application/json'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
+    unavailable = ('Registration' if path == 'signup' else 'Sign-in') + ' is temporarily unavailable. Please try again.'
     try:
         response = requests.request(method, url + '/auth/v1/' + path, headers=headers,
                                     json=payload, timeout=(5, 15), allow_redirects=False)
         if response.status_code in (400, 401, 403, 422):
+            if path == 'signup':
+                try:
+                    error = response.json()
+                    code = error.get('error_code', error.get('code')) if isinstance(error, dict) else None
+                except ValueError:
+                    code = None
+                if code in ('user_already_exists', 'email_exists'):
+                    return {}  # Match Supabase's generic response without exposing account existence.
+                if code == 'weak_password':
+                    raise RegistrationRejected('Choose a stronger password and try again.')
+                if code in ('signup_disabled', 'email_provider_disabled'):
+                    raise RegistrationRejected('Registration is currently disabled. Contact your administrator.')
             raise AuthRejected()
         if not 200 <= response.status_code < 300:
-            raise AuthUnavailable('Sign-in is temporarily unavailable. Please try again.')
+            raise AuthUnavailable(unavailable)
         if response.status_code == 204:
             return {}
         result = response.json()
@@ -64,7 +88,7 @@ def _call(method, path, *, token=None, payload=None):
             raise ValueError()
         return result
     except (requests.RequestException, ValueError):
-        raise AuthUnavailable('Sign-in is temporarily unavailable. Please try again.') from None
+        raise AuthUnavailable(unavailable) from None
 
 
 def _tokens(result):
@@ -81,11 +105,17 @@ def sign_in(email, password):
     return _tokens(_call('POST', 'token?grant_type=password', payload={'email': email, 'password': password}))
 
 
+def sign_up(full_name, email, password):
+    # Supabase owns the account, email confirmation, password policy and name.
+    # Never accept application roles or profile IDs from a registration form.
+    _call('POST', 'signup', payload={'email': email, 'password': password, 'data': {'full_name': full_name}})
+
+
 def refresh(refresh_token):
     return _tokens(_call('POST', 'token?grant_type=refresh_token', payload={'refresh_token': refresh_token}))
 
 
-def verified_user(access_token):
+def verified_identity(access_token):
     user = _call('GET', 'user', token=access_token)
     try:
         identifier = UUID(user.get('id', ''))
@@ -99,7 +129,14 @@ def verified_user(access_token):
                 raise AuthRejected()
         except (ValueError, TypeError):
             raise AuthRejected() from None
-    return identifier
+    metadata = user.get('user_metadata')
+    name = metadata.get('full_name') if isinstance(metadata, dict) else None
+    name = ''.join(c for c in name.strip() if ord(c) >= 32 and ord(c) != 127)[:120] if isinstance(name, str) else ''
+    return SupabaseIdentity(identifier, name)
+
+
+def verified_user(access_token):
+    return verified_identity(access_token).id
 
 
 def sign_out(access_token):

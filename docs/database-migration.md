@@ -9,10 +9,13 @@ local persistence.
 ### Version 004: Supabase authentication
 
 Follow [the Supabase Auth setup guide](supabase-authentication.md) for environment
-settings, first-user linking and verification. The versioned upgrade adds a
-nullable unique `admin_users.supabase_user_id` UUID and the private
+settings, signup, optional legacy profile linking and verification. The versioned
+upgrade adds a nullable unique `admin_users.supabase_user_id` UUID and the private
 `admin_auth_sessions` support table. Existing user IDs, roles, records and audit
-references are preserved. No users are automatically admitted to the app.
+references are preserved. The migration creates no Auth accounts. Current app
+code automatically creates an audit profile at a confirmed user's first login;
+all confirmed Supabase users have full panel access. Signup requires no schema
+upgrade beyond 004.
 
 Use `python migrations/004_supabase_authentication.py` for a read-only preflight
 and add `--apply` to apply. Alternatively run the entire

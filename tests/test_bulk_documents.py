@@ -186,7 +186,7 @@ def test_bulk_routes_require_authentication_and_block_foreign_origin(client, adm
     assert result.status_code == 403
 
 
-def test_er_viewer_can_download_but_cannot_bulk_upload(migrated_admin):
+def test_er_legacy_viewer_has_full_document_access(migrated_admin):
     app, client, storage, destination = migrated_admin
     from sqlalchemy import update
     from database.models import Base
@@ -196,4 +196,4 @@ def test_er_viewer_can_download_but_cannot_bulk_upload(migrated_admin):
     result = client.post('/admin/consignments/documents/bulk-download', json={'search': 'LRN-001', 'kind': 'pod'})
     assert result.status_code == 200 and result.mimetype == 'application/zip'
     result = upload(client, [('LRN-001_pod.png', image())], apply=True)
-    assert result.status_code == 403
+    assert result.status_code == 200

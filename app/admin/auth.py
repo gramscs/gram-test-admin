@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.auth_sessions import AuthSession
 from app.models import db
 from app import supabase_auth as provider
+from app.user_profiles import profile_for_identity
 from database.models import AdminUser
 
 ADMIN_SESSION_KEY = 'admin_auth_session'
@@ -33,6 +34,7 @@ class AuthenticatedAdmin:
     username: str
     role: str
     supabase_user_id: UUID
+    display_name: str = ''
 
 
 def _cipher():
@@ -103,7 +105,7 @@ def current_admin_user():
         row = db.session.get(AuthSession, identifier)
         user = db.session.get(AdminUser, row.admin_user_id) if row else None
         now = datetime.now(UTC)
-        if not row or row.expires_at <= now or not user or not user.active or not user.supabase_user_id:
+        if not row or row.expires_at <= now or not user or not user.supabase_user_id:
             _forget(row)
             return None
         tokens = _open(row.token_data)
@@ -120,9 +122,11 @@ def current_admin_user():
                 tokens = provider.refresh(tokens['refresh_token'])
                 row.token_data = _seal(tokens)
                 refreshed = True
-        if provider.verified_user(tokens['access_token']) != user.supabase_user_id:
+        identity = provider.verified_identity(tokens['access_token'])
+        if identity.id != user.supabase_user_id:
             raise provider.AuthRejected()
-        verified = AuthenticatedAdmin(user.id, user.username, user.role, user.supabase_user_id)
+        verified = AuthenticatedAdmin(user.id, user.username, user.role, user.supabase_user_id,
+                                     identity.full_name or user.username)
         # Finish authentication's transaction before a view starts changing business records.
         if refreshed:
             db.session.commit()
@@ -149,17 +153,10 @@ def is_admin_authenticated():
 
 def login_admin(email, password):
     tokens = provider.sign_in(email, password)
-    subject = provider.verified_user(tokens['access_token'])
+    identity = provider.verified_identity(tokens['access_token'])
     try:
-        user = db.session.query(AdminUser).filter_by(supabase_user_id=subject, active=True).one_or_none()
-        if user is None:
-            try:
-                provider.sign_out(tokens['access_token'])
-            except provider.AuthUnavailable:
-                pass
-            db.session.rollback()
-            raise provider.AuthRejected()
-        verified = AuthenticatedAdmin(user.id, user.username, user.role, subject)
+        user = profile_for_identity(identity.id)
+        verified = AuthenticatedAdmin(user.id, user.username, user.role, identity.id, identity.full_name or user.username)
         previous = _session_hash()
         if previous:
             db.session.execute(delete(AuthSession).where(AuthSession.session_hash == previous))
@@ -174,6 +171,9 @@ def login_admin(email, password):
         db.session.rollback()
         current_app.logger.error('Unable to create authentication session; check database migration 004.')
         raise provider.AuthUnavailable('Sign-in storage is unavailable. Ask an administrator to check database migration 004.') from None
+    except ValueError:
+        db.session.rollback()
+        raise provider.AuthUnavailable('Unable to create your application profile. Contact your administrator.') from None
     session.clear()
     session.permanent = True
     session[ADMIN_SESSION_KEY] = identifier
@@ -221,8 +221,8 @@ def require_admin(f=None, *, read_only=False):
             if request.method not in ('GET', 'HEAD', 'OPTIONS'):
                 if not same_origin():
                     return jsonify(success=False, message='Changes must come from this admin app.'), 403
-                if user.role == 'viewer' and not read_only:
-                    return jsonify(success=False, message='This account has read-only access.'), 403
+                # All confirmed Supabase members currently have full panel access.
+                # read_only is retained for compatibility with existing route declarations.
             return f(*args, **kwargs)
         wants_json = (request.path.startswith('/api/') or 'application/json' in (request.accept_mimetypes.best or '')
                       or (request.content_type or '').startswith('application/json'))
