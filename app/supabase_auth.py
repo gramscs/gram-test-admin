@@ -21,13 +21,8 @@ class AuthUnavailable(Exception):
     pass
 
 
-def _configuration():
-    url = current_app.config.get('SUPABASE_URL', '').strip().rstrip('/')
-    key = current_app.config.get('SUPABASE_ANON_KEY', '').strip()
-    parsed = urlsplit(url)
-    if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
-            or parsed.path or parsed.query or parsed.fragment or not key):
-        raise AuthUnavailable('Supabase sign-in is not configured. Check SUPABASE_URL and SUPABASE_ANON_KEY.')
+def validate_public_key(key):
+    """Reject a privileged API key without printing its value."""
     # Inspect API-key metadata only to reject privileged keys; this never verifies a user.
     role = None
     if key.count('.') == 2:
@@ -37,6 +32,16 @@ def _configuration():
             pass
     if key.startswith('sb_secret_') or role == 'service_role':
         raise AuthUnavailable('Use the Supabase publishable or anon key for SUPABASE_ANON_KEY, not a server secret key.')
+
+
+def _configuration():
+    url = current_app.config.get('SUPABASE_URL', '').strip().rstrip('/')
+    key = current_app.config.get('SUPABASE_ANON_KEY', '').strip()
+    parsed = urlsplit(url)
+    if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+            or parsed.path or parsed.query or parsed.fragment or not key):
+        raise AuthUnavailable('Supabase sign-in is not configured. Check SUPABASE_URL and SUPABASE_ANON_KEY.')
+    validate_public_key(key)
     return url, key
 
 
