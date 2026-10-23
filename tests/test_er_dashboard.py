@@ -6,9 +6,9 @@ from zipfile import ZipFile
 
 import pytest
 from sqlalchemy import inspect, select
-from werkzeug.security import generate_password_hash
 
 from app import create_app
+from auth_support import AUTH_USER_ID, sign_in
 from app.models import db
 from database.models import Base
 from migrations.shipment_v1 import RECORDS, migrate
@@ -23,7 +23,6 @@ def migrated_admin(populated, tmp_path, monkeypatch):
         migrate(destination, storage, source_engine=source, fresh_target=True)
         monkeypatch.setenv('FLASK_ENV', 'development')
         monkeypatch.setenv('DATABASE_URL', destination.url.render_as_string(hide_password=False))
-        monkeypatch.setenv('ADMIN_USERNAME', 'admin')
         monkeypatch.setenv('SUPABASE_URL', 'https://storage-test.supabase.co')
         monkeypatch.setenv('SUPABASE_KEY', 'test-service-key')
         import supabase
@@ -31,15 +30,19 @@ def migrated_admin(populated, tmp_path, monkeypatch):
         application = create_app({'TESTING': True, 'SECRET_KEY': 'er-test-key',
             'INSTANCE_PATH': str(storage.root.parent), 'AUTO_CREATE_TABLES': False,
             'RATELIMIT_ENABLED': False, 'ADMIN_DATABASE_MODEL': 'auto'})
-        from app.admin import auth
-        monkeypatch.setattr(auth, 'ADMIN_PASSWORD_HASH', generate_password_hash('test-password'))
+        from app.auth_sessions import AuthBase
+        AuthBase.metadata.create_all(destination)
+        from database.models import AdminUser
+        from sqlalchemy import update
+        with destination.begin() as connection:
+            connection.execute(update(AdminUser).where(AdminUser.username == 'admin').values(supabase_user_id=AUTH_USER_ID))
         result = application.test_cli_runner().invoke(args=['upgrade-db'])
         assert result.exit_code == 0, result.output
         assert 'ER backend ready' in result.output
         assert 'consignment' not in inspect(destination).get_table_names()
         assert 'company' not in inspect(destination).get_table_names()
         client = application.test_client()
-        assert client.post('/admin/login', data={'username': 'admin', 'password': 'test-password'}).status_code == 302
+        assert sign_in(client).status_code == 302
         yield application, client, storage, destination
         with application.app_context():
             db.session.remove()
@@ -205,23 +208,18 @@ def test_staged_negative_ids_save_as_new_uuid_records(migrated_admin):
     assert len(rows) == 2 and all('-' in row['id'] and not row['id'].startswith('-') for row in rows)
 
 
-def test_er_authorization_checks_active_identity_and_viewer_writes(migrated_admin):
+def test_er_legacy_profile_fields_do_not_gate_supabase_members(migrated_admin):
     app, client, storage, destination = migrated_admin
     from sqlalchemy import update
     users = Base.metadata.tables['admin_users']
     with destination.begin() as connection:
         connection.execute(update(users).where(users.c.username == 'admin').values(role='viewer'))
     assert client.get('/admin/consignments/list').status_code == 200
-    assert client.post('/admin/consignments/save', json={'rows': []}).status_code == 403
-    row = client.get('/admin/consignments/list').json['rows'][0]
-    for kind in ('pod', 'invoice'):
-        path = '/admin/consignments/' + row['id'] + '/' + kind
-        assert client.post(path, headers={'Accept': 'application/json'}).status_code == 403
-        assert client.delete(path, json={'expected_reference': None}).status_code == 403
+    assert client.post('/admin/consignments/save', json={'rows': []}).status_code == 200
     with destination.begin() as connection:
         connection.execute(update(users).where(users.c.username == 'admin').values(active=False))
-    assert client.get('/admin/consignments/list').status_code == 401
-    assert client.post('/admin/login', data={'username': 'admin', 'password': 'test-password'}).status_code == 200
+    assert client.get('/admin/consignments/list', headers={'Accept': 'application/json'}).status_code == 200
+    assert sign_in(client).status_code == 302
 
 
 def test_er_reimport_restores_latest_extras_without_mutating_archives(migrated_admin, tmp_path):

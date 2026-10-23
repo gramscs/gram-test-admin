@@ -14,7 +14,7 @@ if (!base || !process.env.SYSTEM_TEST_PASSWORD || !['127.0.0.1', 'localhost'].in
     const artifacts = process.env.SYSTEM_TEST_ARTIFACTS_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'gram-label-ids-'));
     fs.mkdirSync(artifacts, {recursive: true});
     try {
-        await page.goto(base + '/admin/login'); await page.locator('#username').fill('admin');
+        await page.goto(base + '/admin/login'); await page.locator('#email').fill('admin@example.test');
         await page.locator('#password').fill(process.env.SYSTEM_TEST_PASSWORD);
         await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         await page.goto(base + '/admin/labels');

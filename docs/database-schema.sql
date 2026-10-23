@@ -5,13 +5,15 @@ BEGIN;
 
 CREATE TABLE admin_users (
 	username VARCHAR(120) NOT NULL,
+	supabase_user_id UUID,
 	role VARCHAR(20) DEFAULT 'operator' NOT NULL,
 	active BOOLEAN DEFAULT true NOT NULL,
 	id UUID DEFAULT gen_random_uuid() NOT NULL,
 	CONSTRAINT pk_admin_users PRIMARY KEY (id),
 	CONSTRAINT ck_admin_users_username_not_blank CHECK (trim(username) <> ''),
 	CONSTRAINT ck_admin_users_valid_role CHECK (role IN ('administrator', 'operator', 'viewer')),
-	CONSTRAINT uq_admin_users_username UNIQUE (username)
+	CONSTRAINT uq_admin_users_username UNIQUE (username),
+	CONSTRAINT uq_admin_users_supabase_user_id UNIQUE (supabase_user_id)
 );
 
 CREATE TABLE companies (

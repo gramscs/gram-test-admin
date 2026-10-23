@@ -5,6 +5,7 @@ import pytest
 from openpyxl import load_workbook
 
 from app import create_app
+from auth_support import sign_in, sign_out
 from app.models import Consignment, Lead, NewsletterSubscriber, db
 
 
@@ -31,10 +32,10 @@ def test_json_requests_require_login(client):
 
 
 def test_invalid_login_and_logout(client, admin_client):
-    response = client.get("/admin/logout", follow_redirects=True)
+    response = sign_out(client, follow_redirects=True)
     assert b"Admin Login" in response.data
-    response = client.post("/admin/login", data={"username": "admin", "password": "wrong"})
-    assert b"Invalid username or password" in response.data
+    response = sign_in(client, password="wrong")
+    assert b"Unable to sign in" in response.data
     assert client.get("/admin/dashboard").status_code == 302
 
 
@@ -170,11 +171,11 @@ def test_database_persists_between_app_instances(admin_client, app):
         db.engine.dispose()
 
 
-@pytest.mark.parametrize("missing", ["SECRET_KEY", "ADMIN_PASSWORD_HASH", "DATABASE_URL"])
+@pytest.mark.parametrize("missing", ["SECRET_KEY", "SUPABASE_ANON_KEY", "DATABASE_URL"])
 def test_production_requires_configuration(app, monkeypatch, tmp_path, missing):
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("SECRET_KEY", "test-only-key")
-    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "test-only-hash")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.delenv(missing)
     with pytest.raises(RuntimeError, match=missing):
@@ -217,7 +218,6 @@ def test_local_database_urls_are_rejected():
 def test_supabase_rejects_unfilled_password_placeholder(app, monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("SECRET_KEY", "test-key")
-    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "test-hash")
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.example:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
     with pytest.raises(RuntimeError, match="password placeholder"):
         create_app({"INSTANCE_PATH": str(tmp_path / "placeholder-instance")})

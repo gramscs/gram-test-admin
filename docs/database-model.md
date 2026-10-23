@@ -9,7 +9,7 @@ tables:
 
 | Table | Purpose |
 | --- | --- |
-| `admin_users` | Dashboard usernames, roles, and active state |
+| `admin_users` | Audit/ownership profiles and unique Supabase Auth identity links; legacy role/status metadata |
 | `companies` | Client names, contact details, and registered address |
 | `company_locations` | Saved pickup/drop addresses and defaults |
 | `consignments` | Shipment identifiers, status, pieces, weight, volume, dates, and address snapshots |
@@ -28,8 +28,9 @@ supported.
 
 ## Integrity rules
 
-- Usernames and company names are unique. Roles are `administrator`,
-  `operator`, or `viewer`.
+- Usernames and company names are unique. Legacy roles are `administrator`,
+  `operator`, or `viewer`; roles and profile `active` do not gate panel access.
+  Supabase Auth manages credentials and account status.
 - Shipment identifiers use `LRN`, `Order ID`, or `AWB`; identifier values are
   globally unique.
 - Pieces must be at least one. Weight (kg) and volume (ft³ / CBFT) use
@@ -100,3 +101,19 @@ Per-package overrides are no longer supported. Older `boxes` entries are ignored
 on reads and printing, excluded from normal Excel exports, and discarded when
 saving or importing a shipment. Historical backups retain the original stored
 data. Removing these controls does not require a schema migration.
+
+
+Supabase Auth identity UUIDs are linked by the nullable, unique
+`admin_users.supabase_user_id` column. Existing primary keys and audit foreign
+keys stay unchanged. First verified login automatically creates a missing profile
+with its Auth UUID as the primary key. Existing linked profiles retain their IDs.
+All confirmed Supabase users have full shared-panel access. Authentication checks
+use the verified identity, not user-editable metadata or an email match.
+
+`admin_auth_sessions` is a private support table for encrypted Supabase access
+and refresh tokens, hashed opaque session identifiers, and eight-hour session
+expiry. RLS is enabled and direct access by `anon` / `authenticated` is revoked.
+It is excluded from business-data backups and exports. Migration 004 adds these
+structures without modifying historical profiles. Registration needs no further
+schema changes. The private session table holds login state, not another user
+account or password database.

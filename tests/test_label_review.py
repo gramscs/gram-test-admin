@@ -1,4 +1,5 @@
 """Reviewed commercial labels, durable sequences and unchanged databases."""
+from auth_support import sign_in, sign_out
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import io
@@ -157,10 +158,12 @@ def test_run_cannot_be_reused_for_different_details_or_owner(app, admin_client):
     assert changed.status_code == 409
     from database.models import AdminUser
     with app.app_context():
-        db.session.add(AdminUser(username='another-admin', role='administrator', active=True))
+        from conftest import AUTH_USER_ID
+        db.session.query(AdminUser).filter_by(username='admin').one().supabase_user_id = None
+        db.session.flush()
+        db.session.add(AdminUser(username='another-admin', role='administrator', active=True, supabase_user_id=AUTH_USER_ID))
         db.session.commit()
-    with admin_client.session_transaction() as state:
-        state['admin_username'] = 'another-admin'
+    assert sign_in(admin_client).status_code == 302
     assert admin_client.post('/admin/labels/generate', data=data).status_code == 409
 
 
@@ -251,9 +254,9 @@ def test_review_limits_missing_ids_validation_origin_and_login(app, admin_client
     row = create(admin_client)[0]
     for ids in [[], [999999], [row['id']] * 501]:
         assert admin_client.post('/admin/labels/review', json={'consignment_ids': ids}).status_code == 400
-    assert admin_client.post('/admin/labels/review', json={'consignment_ids': [row['id']]}, headers={'Origin': 'https://other.test'}).status_code == 400
+    assert admin_client.post('/admin/labels/review', json={'consignment_ids': [row['id']]}, headers={'Origin': 'https://other.test'}).status_code == 403
     assert admin_client.post('/admin/labels/generate', data={'consignment_ids': [row['id']]}).status_code == 400
-    admin_client.get('/admin/logout')
+    sign_out(admin_client)
     assert client.post('/admin/labels/review', json={'consignment_ids': [row['id']]}).status_code == 401
 
 

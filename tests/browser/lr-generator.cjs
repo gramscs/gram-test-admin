@@ -18,7 +18,7 @@ if (!base || !['127.0.0.1', 'localhost'].includes(new URL(base).hostname)) throw
     try {
         if (process.env.SYSTEM_TEST_PASSWORD) {
             await page.goto(base + '/admin/login');
-            await page.locator('[name=username]').fill('admin');
+            await page.locator('[name=email]').fill('admin@example.test');
             await page.locator('[name=password]').fill(process.env.SYSTEM_TEST_PASSWORD);
             await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         }

@@ -10,6 +10,7 @@ import pytest
 from pypdf import PdfReader
 
 from app import create_app
+from flask import session
 from app.admin import lr
 from app.admin.lr_fields import FIELDS
 from app.admin.lr_pdf import generate_lr_pdf
@@ -36,6 +37,8 @@ def lr_app(monkeypatch, shipment):
         'RATELIMIT_ENABLED': False, 'ADMIN_DATABASE_MODEL': 'legacy',
     })
     monkeypatch.setattr(lr.models, 'using_er', lambda: False)
+    from app.admin import auth
+    monkeypatch.setattr(auth, 'current_admin_user', lambda: SimpleNamespace(id=1, username='admin', role='administrator') if session.get('admin_username') else None)
 
     def forbidden(*args, **kwargs):
         raise AssertionError('LRs must not execute SQL or persist form details.')
@@ -65,7 +68,6 @@ def lr_app(monkeypatch, shipment):
 def lr_client(lr_app):
     client = lr_app.test_client()
     with client.session_transaction() as session:
-        session['admin_authenticated'] = True
         session['admin_username'] = 'admin'
     return client
 
@@ -165,7 +167,7 @@ def test_generation_is_authenticated_and_same_origin(lr_app, lr_client, details)
     payload = dict(consignment_ids=['1'], lr_details=[details])
     assert lr_app.test_client().post('/admin/lr-generator/generate', json=payload).status_code == 401
     assert lr_client.post('/admin/lr-generator/generate', json=payload,
-                          headers={'Origin': 'https://other.example'}).status_code == 400
+                          headers={'Origin': 'https://other.example'}).status_code == 403
 
 
 @pytest.mark.parametrize('delivery,disposition', [('preview', 'inline'), ('download', 'attachment')])

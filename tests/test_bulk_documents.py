@@ -1,4 +1,5 @@
 """Bulk documents, bucket separation and measurement choices on both models."""
+from auth_support import sign_in, sign_out
 import io
 import json
 from pathlib import Path
@@ -178,16 +179,14 @@ def test_bulk_upload_can_exceed_normal_form_limit_within_its_own_limit(admin_cli
 
 
 def test_bulk_routes_require_authentication_and_block_foreign_origin(client, admin_client):
-    client.get('/admin/logout')
+    sign_out(client)
     assert client.post('/admin/consignments/documents/bulk-download', json={}).status_code == 401
-    from app.admin.auth import ADMIN_SESSION_KEY, ADMIN_SESSION_USERNAME_KEY
-    with admin_client.session_transaction() as session:
-        session[ADMIN_SESSION_KEY] = True; session[ADMIN_SESSION_USERNAME_KEY] = 'admin'
+    assert sign_in(admin_client).status_code == 302
     result = admin_client.post('/admin/consignments/documents/bulk-upload', headers={'Origin': 'https://unrelated.example.test'})
     assert result.status_code == 403
 
 
-def test_er_viewer_can_download_but_cannot_bulk_upload(migrated_admin):
+def test_er_legacy_viewer_has_full_document_access(migrated_admin):
     app, client, storage, destination = migrated_admin
     from sqlalchemy import update
     from database.models import Base
@@ -197,4 +196,4 @@ def test_er_viewer_can_download_but_cannot_bulk_upload(migrated_admin):
     result = client.post('/admin/consignments/documents/bulk-download', json={'search': 'LRN-001', 'kind': 'pod'})
     assert result.status_code == 200 and result.mimetype == 'application/zip'
     result = upload(client, [('LRN-001_pod.png', image())], apply=True)
-    assert result.status_code == 403
+    assert result.status_code == 200

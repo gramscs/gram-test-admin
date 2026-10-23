@@ -19,7 +19,7 @@ if (!base || !password || !['127.0.0.1', 'localhost'].includes(new URL(base).hos
     let shipment;
     try {
         await page.goto(base + '/admin/login');
-        await page.locator('[name=username]').fill(process.env.SYSTEM_TEST_USERNAME || 'admin');
+        await page.locator('[name=email]').fill(process.env.SYSTEM_TEST_EMAIL || 'admin@example.test');
         await page.locator('[name=password]').fill(password);
         await page.locator('button[type=submit]').click();
         await page.waitForURL('**/admin/dashboard');

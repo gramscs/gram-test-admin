@@ -6,10 +6,17 @@ It does not keep application data in local database or file storage.
 
 ## Configure and run
 
-Requires Python 3.12. Copy [.env.example](.env.example) to `.env` and configure
-`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SECRET_KEY`, and
-`ADMIN_PASSWORD_HASH`. The database URL must point to PostgreSQL. Supabase
-Storage must contain private `pod-uploads`, `invoice-uploads`, and
+Register through **Create account** and sign in using Supabase Auth email/password.
+Every confirmed user has full panel access. Audit profiles are created automatically;
+credentials and account status stay in Supabase Auth. Apply migration 004 if needed
+and enable signup using [the Supabase Auth setup guide](docs/supabase-authentication.md).
+
+Requires Python 3.14. The local setup command creates a private `.env` from
+[.env.example](.env.example), preserves existing values, generates `SECRET_KEY`
+only if absent, and securely prompts for missing Supabase credentials. Configure
+`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`, and
+`SECRET_KEY`. The database URL must point to PostgreSQL. Supabase
+Storage must contain private `pod-uploads`, `invoice-uploads`, `lr-uploads`, and
 `mis-reports` buckets (or the bucket names configured in `.env`).
 
 Install dependencies and start the app:
@@ -18,8 +25,19 @@ Install dependencies and start the app:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+python setup_env.py
 python run.py
 ```
+
+Codex environment settings are separate from your Codespace or laptop. Run the
+setup command in the terminal of the workspace where you will run the app.
+Supabase credentials are entered without echoing them. Already exported settings
+are reused without copying them into `.env`; the app gives those settings priority.
+The private `.env` is ignored by Git and will not arrive through `git pull`.
+The setup command does not apply migrations or create database/Auth users.
+If it rejects `SUPABASE_ANON_KEY`, use the **publishable** or legacy **anon/public**
+key from Supabase Project Settings → API Keys. A secret/service-role key belongs
+only in `SUPABASE_KEY`. Correct any exported value first, since it overrides `.env`.
 
 Schema creation is not automatic on startup. For an existing compatible ER
 database, run the additive support-table upgrade and verify the schema:

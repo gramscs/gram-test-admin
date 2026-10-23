@@ -24,7 +24,7 @@ if (!base || !process.env.SYSTEM_TEST_PASSWORD || !['127.0.0.1', 'localhost'].in
         }
     }
     try {
-        await page.goto(base+'/admin/login'); await page.locator('#username').fill('admin'); await page.locator('#password').fill(process.env.SYSTEM_TEST_PASSWORD);
+        await page.goto(base+'/admin/login'); await page.locator('#email').fill('admin@example.test'); await page.locator('#password').fill(process.env.SYSTEM_TEST_PASSWORD);
         await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         await page.goto(base+'/admin/consignments');
         await page.locator('#sheet-body .edit-row').first().waitFor();

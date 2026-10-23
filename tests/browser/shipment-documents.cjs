@@ -42,7 +42,7 @@ function proofPDF() {
         await page.locator('#save-btn').click(); const response = await event; assert.equal(response.status(), 200); assert.equal((await response.json()).success, true);
     }
     try {
-        await page.goto(base + '/admin/login'); await page.locator('[name=username]').fill(process.env.SYSTEM_TEST_USERNAME || 'admin');
+        await page.goto(base + '/admin/login'); await page.locator('[name=email]').fill(process.env.SYSTEM_TEST_EMAIL || 'admin@example.test');
         await page.locator('[name=password]').fill(password); await page.locator('button[type=submit]').click(); await page.waitForURL('**/admin/dashboard');
         for (const letter of ['A', 'B']) {
             const result = await page.request.post(base + '/admin/companies', {data: {name: prefix + '-Company-' + letter}});

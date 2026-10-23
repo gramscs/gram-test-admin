@@ -18,7 +18,7 @@ if (!base || !process.env.SYSTEM_TEST_PASSWORD || !['127.0.0.1', 'localhost'].in
     try {
         await page.goto(base + '/admin/login');
         assert.equal(await page.getByRole('link', {name: 'Admin Home', exact: true}).count(), 0);
-        await page.locator('#username').fill('admin'); await page.locator('#password').fill(process.env.SYSTEM_TEST_PASSWORD);
+        await page.locator('#email').fill('admin@example.test'); await page.locator('#password').fill(process.env.SYSTEM_TEST_PASSWORD);
         await page.getByRole('button', {name: /Sign In/}).click(); await page.waitForURL('**/admin/dashboard');
         const created = await page.request.post(base + '/admin/companies', {data: {name: prefix, address: 'Registered office', email: 'client@example.test', phone: '1234567890', locations: [
             {kind: 'pickup', label: 'Warehouse', address: 'Pickup address', pincode: '110001', is_default: true},
