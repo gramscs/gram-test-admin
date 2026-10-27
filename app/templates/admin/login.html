@@ -16,10 +16,10 @@
         <h1>Admin Login</h1><p>Welcome back. Sign in to keep things moving.</p>
       </div>
       {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-      <form method="POST" action="{{ url_for('admin.login') }}" novalidate>
+      <form method="POST" action="{{ url_for('admin.login') }}">
         <input type="hidden" name="csrf_token" value="{{ auth_csrf_token() }}" />
-        <div class="mb-3"><label for="email" class="form-label">Email address</label><input type="email" id="email" name="email" class="form-control" required autofocus autocomplete="username" placeholder="Enter your email address" /></div>
-        <div class="mb-3"><label for="password" class="form-label">Password</label><input type="password" id="password" name="password" class="form-control" required autocomplete="current-password" placeholder="Enter password" /></div>
+        <div class="mb-3"><label for="email" class="form-label">Email address</label><input type="email" id="email" name="email" class="form-control" required autofocus maxlength="254" autocomplete="username" placeholder="Enter your email address" value="{{ email|default('') }}" /></div>
+        <div class="mb-3"><label for="password" class="form-label">Password</label><input type="password" id="password" name="password" class="form-control" required maxlength="4096" autocomplete="current-password" placeholder="Enter password" /></div>
         <button type="submit" class="btn btn-primary login-btn">Sign In <i class="fa fa-arrow-right ms-2" aria-hidden="true"></i></button>
       </form>
       <p class="login-footnote">Need an account? <a href="{{ url_for('admin.signup') }}">Create account</a></p>

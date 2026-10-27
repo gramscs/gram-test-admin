@@ -10,6 +10,12 @@ Register through **Create account** and sign in using Supabase Auth email/passwo
 Every confirmed user has full panel access. Audit profiles are created automatically;
 credentials and account status stay in Supabase Auth. Apply migration 004 if needed
 and enable signup using [the Supabase Auth setup guide](docs/supabase-authentication.md).
+Email confirmation returns to `/admin/auth/callback` using PKCE. Allow this callback
+in Supabase's redirect settings and set `SUPABASE_AUTH_REDIRECT_URL` for deployments.
+Open confirmation links in the browser where registration started; other browsers
+can sign in with the confirmed email and password. With confirmation disabled,
+successful registration signs the user in immediately. Shared admin passwords
+and manually generated admin password hashes are not used.
 
 Requires Python 3.14. The local setup command creates a private `.env` from
 [.env.example](.env.example), preserves existing values, generates `SECRET_KEY`

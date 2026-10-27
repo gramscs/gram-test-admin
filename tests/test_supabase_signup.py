@@ -1,12 +1,16 @@
 """Registration, automatic audit profiles and shared panel access."""
 from concurrent.futures import ThreadPoolExecutor
+import base64
+import hashlib
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 import requests
 
 from app.admin import auth
+from app.admin.auth_routes import SIGNUP_FLOW_KEY
 from app.auth_sessions import AuthSession
 from app.models import db
 from database.models import AdminUser, AuditLog
@@ -26,8 +30,14 @@ def test_registration_confirmation_login_and_audit_profile(app, client, isolated
     assert b'/admin/signup' in client.get('/admin/login').data
     response = register(client, role='administrator', supabase_user_id=str(AUTH_USER_ID))
     assert response.status_code == 200 and b'Registration submitted' in response.data
-    assert isolated_auth.calls[-1][3] == {
+    payload = isolated_auth.calls[-1][3]
+    assert {key: payload[key] for key in ('email', 'password', 'data')} == {
         'email': 'new@example.test', 'password': 'signup-password', 'data': {'full_name': 'New Member'}}
+    assert payload['code_challenge_method'] == 's256'
+    with client.session_transaction() as state:
+        verifier = state[SIGNUP_FLOW_KEY]['verifier']
+    assert payload['code_challenge'] == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+    assert verifier not in str(isolated_auth.calls)
     user = isolated_auth.users['new@example.test']
     subject = UUID(user['id'])
     with app.app_context():
@@ -93,6 +103,15 @@ def test_registration_csrf_and_origin(client, isolated_auth):
     client.get('/admin/signup')
     with client.session_transaction() as state:
         token = state[auth.CSRF_KEY]
+    same_origin_opaque = client.post('/admin/signup', data={'csrf_token': token},
+                                     headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert b'Your registration form expired.' not in same_origin_opaque.data
+    stale_opaque = client.post('/admin/signup', data={'csrf_token': 'stale-token'},
+                               headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert b'Your registration form expired.' in stale_opaque.data
+    cross_site_opaque = client.post('/admin/signup', data={'csrf_token': token},
+                                    headers={'Origin': 'null', 'Sec-Fetch-Site': 'cross-site'})
+    assert b'Your registration form expired.' in cross_site_opaque.data
     response = client.post('/admin/signup', data={'csrf_token': token}, headers={'Origin': 'https://other.example'})
     assert response.status_code == 400
     assert isolated_auth.calls == []
@@ -124,14 +143,110 @@ def test_signup_outage_does_not_leak_or_create_profile(app, client, monkeypatch)
         assert db.session.query(AuthSession).count() == 0
 
 
-def test_auto_confirm_response_tokens_are_not_used_or_exposed(app, client, monkeypatch):
-    monkeypatch.setattr(requests, 'request', lambda *a, **k: SimpleNamespace(
-        status_code=200, json=lambda: {'access_token': 'private-access', 'refresh_token': 'private-refresh'}))
+def test_auto_confirm_registration_creates_verified_private_session(app, client, isolated_auth):
+    isolated_auth.confirm_email = False
     response = register(client)
-    assert response.status_code == 200
-    assert b'private-access' not in response.data and b'private-refresh' not in response.data
+    assert response.status_code == 302 and response.location.endswith('/admin/dashboard')
+    assert b'access-1' not in response.data and b'refresh-1' not in response.data
     with client.session_transaction() as state:
-        assert auth.ADMIN_SESSION_KEY not in state
+        assert auth.ADMIN_SESSION_KEY in state
+        assert SIGNUP_FLOW_KEY not in state
+        assert 'access_token' not in state and 'refresh_token' not in state
+    with app.app_context():
+        assert db.session.query(AuthSession).count() == 1
+        assert db.session.query(AdminUser).count() == 2
+    assert client.get('/admin/consignments/list', headers={'Accept': 'application/json'}).status_code == 200
+
+
+def confirmation_url(client, isolated_auth):
+    code = isolated_auth.confirm('new@example.test')
+    with client.session_transaction() as state:
+        nonce = state[SIGNUP_FLOW_KEY]['state']
+    return f'/admin/auth/callback?code={code}&state={nonce}'
+
+
+def test_confirmation_callback_establishes_session_and_cannot_be_replayed(app, client, isolated_auth):
+    assert register(client).status_code == 200
+    callback = confirmation_url(client, isolated_auth)
+    response = client.get(callback)
+    assert response.status_code == 302 and response.location.endswith('/admin/dashboard')
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert response.headers['Referrer-Policy'] == 'no-referrer'
+    assert client.get('/admin/consignments/list', headers={'Accept': 'application/json'}).status_code == 200
+    with client.session_transaction() as state:
+        assert auth.ADMIN_SESSION_KEY in state and SIGNUP_FLOW_KEY not in state
+    assert client.get(callback).status_code == 400
+    with app.app_context():
+        assert db.session.query(AuthSession).count() == 1
+
+
+@pytest.mark.parametrize('change', ['browser', 'state', 'unicode_state', 'expired', 'code', 'provider_error'])
+def test_confirmation_rejects_unbound_expired_and_invalid_links(app, client, isolated_auth, change):
+    register(client)
+    callback = confirmation_url(client, isolated_auth)
+    if change == 'browser':
+        client = app.test_client()
+    elif change == 'state':
+        callback = callback.split('&state=')[0] + '&state=wrong'
+    elif change == 'unicode_state':
+        callback = callback.split('&state=')[0] + '&state=\u2603'
+    elif change == 'expired':
+        with client.session_transaction() as state:
+            flow = dict(state[SIGNUP_FLOW_KEY], created_at=0)
+            state[SIGNUP_FLOW_KEY] = flow
+    elif change == 'code':
+        callback = callback.replace('code=confirmation-', 'code=wrong-')
+    else:
+        callback += '&error=access_denied&error_description=private-provider-details'
+    response = client.get(callback)
+    assert response.status_code == 400
+    assert b'private-provider-details' not in response.data
+    with app.app_context():
+        assert db.session.query(AuthSession).count() == 0
+    if change != 'code':
+        assert not any('grant_type=pkce' in call[1] for call in isolated_auth.calls)
+
+
+def test_signup_requests_configured_callback_and_state(app, client, isolated_auth, monkeypatch):
+    app.config['SUPABASE_AUTH_REDIRECT_URL'] = 'https://admin.example.test/admin/auth/callback'
+    remote_request, captured = isolated_auth.request, {}
+    def request(*args, **kwargs):
+        captured.update(kwargs)
+        return remote_request(*args, **kwargs)
+    monkeypatch.setattr(requests, 'request', request)
+    assert register(client).status_code == 200
+    url = urlsplit(captured['params']['redirect_to'])
+    assert url.scheme == 'https' and url.netloc == 'admin.example.test'
+    assert url.path == '/admin/auth/callback'
+    with client.session_transaction() as state:
+        assert parse_qs(url.query)['state'] == [state[SIGNUP_FLOW_KEY]['state']]
+
+
+def test_signup_rejects_unsafe_callback_configuration_before_creating_account(app, client, isolated_auth):
+    app.config['SUPABASE_AUTH_REDIRECT_URL'] = 'http://public.example.test/admin/auth/callback'
+    response = register(client)
+    assert response.status_code == 503 and b'SUPABASE_AUTH_REDIRECT_URL' in response.data
+    assert isolated_auth.calls == []
+
+
+def test_confirmation_outage_can_be_retried_without_losing_browser_binding(app, client, isolated_auth, monkeypatch):
+    register(client)
+    callback = confirmation_url(client, isolated_auth)
+    def unavailable(*a, **k):
+        raise requests.ConnectionError('private-connection-details')
+    with monkeypatch.context() as patch:
+        patch.setattr(requests, 'request', unavailable)
+        response = client.get(callback)
+    assert response.status_code == 503 and b'private-connection-details' not in response.data
+    with client.session_transaction() as state:
+        assert SIGNUP_FLOW_KEY in state and auth.ADMIN_SESSION_KEY not in state
+    assert client.get(callback).status_code == 302
+
+
+def test_signup_rate_limit_is_not_reported_as_success(app, client, monkeypatch):
+    monkeypatch.setattr(requests, 'request', lambda *a, **k: SimpleNamespace(status_code=429))
+    response = register(client)
+    assert response.status_code == 429 and b'wait a few minutes' in response.data
     with app.app_context():
         assert db.session.query(AuthSession).count() == 0
 

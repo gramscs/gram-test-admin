@@ -71,14 +71,19 @@ def csrf_token():
 
 def same_origin():
     origin = request.headers.get('Origin')
-    return (request.headers.get('Sec-Fetch-Site') != 'cross-site'
-            and (not origin or urlsplit(origin).netloc == request.host))
+    site = request.headers.get('Sec-Fetch-Site')
+    if site == 'cross-site':
+        return False
+    if origin == 'null':
+        return site == 'same-origin'
+    return not origin or urlsplit(origin).netloc == request.host
 
 
 def valid_auth_form():
     expected, supplied = session.get(CSRF_KEY), request.form.get('csrf_token')
-    return (same_origin() and isinstance(expected, str) and isinstance(supplied, str)
-            and hmac.compare_digest(expected, supplied))
+    token_valid = (isinstance(expected, str) and isinstance(supplied, str)
+                   and hmac.compare_digest(expected.encode('utf-8'), supplied.encode('utf-8')))
+    return same_origin() and token_valid
 
 
 def _forget(row=None):
@@ -152,7 +157,11 @@ def is_admin_authenticated():
 
 
 def login_admin(email, password):
-    tokens = provider.sign_in(email, password)
+    establish_session(provider.sign_in(email, password))
+
+
+def establish_session(tokens):
+    """Verify a Supabase session before creating the app's private session."""
     identity = provider.verified_identity(tokens['access_token'])
     try:
         user = profile_for_identity(identity.id)
@@ -216,7 +225,7 @@ def require_admin(f=None, *, read_only=False):
         try:
             user = current_admin_user()
         except provider.AuthUnavailable as error:
-            return jsonify(success=False, message=str(error)), 503
+            return jsonify(success=False, message=str(error)), error.status_code
         if user:
             if request.method not in ('GET', 'HEAD', 'OPTIONS'):
                 if not same_origin():

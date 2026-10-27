@@ -19,7 +19,11 @@ class AuthRejected(Exception):
 
 
 class AuthUnavailable(Exception):
-    pass
+    status_code = 503
+
+
+class AuthRateLimited(AuthUnavailable):
+    status_code = 429
 
 
 class RegistrationRejected(AuthRejected):
@@ -56,15 +60,20 @@ def _configuration():
     return url, key
 
 
-def _call(method, path, *, token=None, payload=None):
+def _call(method, path, *, token=None, payload=None, params=None):
     url, key = _configuration()
     headers = {'apikey': key, 'Accept': 'application/json'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
     unavailable = ('Registration' if path == 'signup' else 'Sign-in') + ' is temporarily unavailable. Please try again.'
     try:
+        options = {'params': params} if params else {}
         response = requests.request(method, url + '/auth/v1/' + path, headers=headers,
-                                    json=payload, timeout=(5, 15), allow_redirects=False)
+                                    json=payload, timeout=(5, 15), allow_redirects=False, **options)
+        if response.status_code == 429:
+            raise AuthRateLimited('Too many authentication attempts. Please wait a few minutes and try again.')
+        if response.status_code == 401 and not token:
+            raise AuthUnavailable('Supabase rejected the Auth API key. Check SUPABASE_ANON_KEY for this project.')
         if response.status_code in (400, 401, 403, 422):
             if path == 'signup':
                 try:
@@ -80,6 +89,7 @@ def _call(method, path, *, token=None, payload=None):
                     raise RegistrationRejected('Registration is currently disabled. Contact your administrator.')
             raise AuthRejected()
         if not 200 <= response.status_code < 300:
+            current_app.logger.warning('Supabase Auth returned HTTP %s.', response.status_code)
             raise AuthUnavailable(unavailable)
         if response.status_code == 204:
             return {}
@@ -88,6 +98,7 @@ def _call(method, path, *, token=None, payload=None):
             raise ValueError()
         return result
     except (requests.RequestException, ValueError):
+        current_app.logger.warning('Supabase Auth could not be reached or returned an invalid response.')
         raise AuthUnavailable(unavailable) from None
 
 
@@ -105,10 +116,22 @@ def sign_in(email, password):
     return _tokens(_call('POST', 'token?grant_type=password', payload={'email': email, 'password': password}))
 
 
-def sign_up(full_name, email, password):
+def sign_up(full_name, email, password, *, code_challenge, redirect_to):
     # Supabase owns the account, email confirmation, password policy and name.
     # Never accept application roles or profile IDs from a registration form.
-    _call('POST', 'signup', payload={'email': email, 'password': password, 'data': {'full_name': full_name}})
+    result = _call('POST', 'signup', params={'redirect_to': redirect_to}, payload={
+        'email': email, 'password': password, 'data': {'full_name': full_name},
+        'code_challenge': code_challenge, 'code_challenge_method': 's256'})
+    # With Confirm email disabled, Supabase returns an immediately usable session.
+    # Otherwise confirmation must complete before an application session is created.
+    if result.get('access_token') or result.get('refresh_token'):
+        return _tokens(result)
+    return None
+
+
+def exchange_code(code, verifier):
+    return _tokens(_call('POST', 'token?grant_type=pkce',
+                        payload={'auth_code': code, 'code_verifier': verifier}))
 
 
 def refresh(refresh_token):

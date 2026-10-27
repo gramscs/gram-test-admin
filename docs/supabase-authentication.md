@@ -21,6 +21,7 @@ environment settings (or your Codespace's ignored `.env`):
 | `DATABASE_URL` | Test project's PostgreSQL session-pooler connection string; keep its password private |
 | `SUPABASE_URL` | Test project's HTTPS Project URL |
 | `SUPABASE_ANON_KEY` | Project Settings → API Keys → publishable key (`sb_publishable_...`) or legacy anon/public key |
+| `SUPABASE_AUTH_REDIRECT_URL` | App's public confirmation endpoint, e.g. `https://YOUR_APP_HOST/admin/auth/callback`; optional on localhost |
 | `SUPABASE_KEY` | Server-only Storage secret/service-role key for that same project |
 | `SECRET_KEY` | Generate a random app secret using the command below; keep it stable across restarts and workers |
 
@@ -34,7 +35,9 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 `SECRET_KEY` signs browser cookies and encrypts private server-side tokens.
 Changing it requires users to sign in again. `SUPABASE_ANON_KEY` is deliberately
 separate from the privileged Storage client. No user session is installed into
-that client. Keep `AUTO_CREATE_TABLES=false`. Use `FLASK_ENV=production` when
+that client. Remove old `ADMIN_PASSWORD_HASH`, `ADMIN_PASSWORD`, and
+`ADMIN_USERNAME` settings from the running app's environment; they are not used
+for authentication. Keep `AUTO_CREATE_TABLES=false`. Use `FLASK_ENV=production` when
 serving the app over HTTPS; production cookies are Secure and HttpOnly.
 
 Create the four **private** buckets if absent: `pod-uploads`, `invoice-uploads`,
@@ -43,10 +46,10 @@ No database or document-storage fallback is created locally.
 
 ## 2. Apply migration 004 manually
 
-Pull the `authentication` branch and install its dependencies:
+Pull the `feature_branch_authentication` branch and install its dependencies:
 
 ```bash
-git pull --ff-only origin authentication
+git pull --ff-only origin feature_branch_authentication
 python -m pip install -r requirements.txt
 ```
 
@@ -77,17 +80,28 @@ In the test project's **Authentication** settings:
 
 1. Enable the **Email** provider and **Allow new users to sign up**.
 2. Keep **Confirm email** enabled if registration should require verification.
-3. Under **URL Configuration**, set **Site URL** to the app's real login URL,
-   for example `https://YOUR_APP_HOST/admin/login`. For local development use
-   `http://127.0.0.1:5000/admin/login`. Configure allowed redirect URLs to match
-   your deployment. Use the correct Site URL for the environment you are testing.
+3. Under **URL Configuration**, set **Site URL** to the app's real base URL.
+   Add `https://YOUR_APP_HOST/admin/auth/callback**` to **Redirect URLs** to allow
+   the callback and its per-registration state query. For local development add
+   `http://127.0.0.1:5000/admin/auth/callback**` (or the matching `localhost` URL).
+   Set `SUPABASE_AUTH_REDIRECT_URL` to the callback URL without the wildcard,
+   e.g. `https://YOUR_APP_HOST/admin/auth/callback`. Always open the app and its
+   confirmation link using the same hostname; `localhost` and `127.0.0.1` have
+   different browser cookies. An unset redirect setting uses the request origin,
+   so set it explicitly behind a production reverse proxy.
 4. Configure email delivery/SMTP as needed for your project's confirmation emails.
+   The **Confirm signup** email template must retain Supabase's
+   `{{ .ConfirmationURL }}` link, which verifies the email before returning to
+   the app. A template hard-coded to `SiteURL` skips that verification flow.
 
 Use **Create account** on the login screen. Enter full name, email, password,
 and password confirmation. Supabase creates the Auth account and sends the
-confirmation email when required. After confirmation, sign in normally. If
-confirmation is disabled, registration still returns to normal email/password
-sign-in rather than automatically establishing a panel session. Duplicate
+confirmation email when required. Open the link in the browser where registration
+started. The app exchanges the one-time code using PKCE and creates a private
+session only after verifying the returned Supabase user. If the link is opened
+in another browser, the email can still be confirmed; sign in there with email
+and password. If confirmation is disabled, registration signs the verified user
+in immediately. Duplicate
 registration returns the same generic submission message and does not change
 an existing password. Supabase rate limits and password rules still apply.
 
@@ -171,7 +185,10 @@ request verifies the Supabase identity, its confirmed email/account status and
 its UUID link to the audit profile. Sessions expire after eight hours; logout
 deletes the local session and requests revocation of that Supabase session.
 Auth outages return an error
-and never fall back to shared credentials.
+and never fall back to shared credentials. Rate limits show a retry message with
+HTTP 429, and a rejected public API key is reported as a configuration problem,
+not as an incorrect password. Callback responses and authentication forms use
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 
 Focused automated verification uses the existing disposable PostgreSQL test
 database and a mocked Auth HTTP boundary. It does not sign in to or change the
