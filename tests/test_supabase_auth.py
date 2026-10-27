@@ -81,6 +81,16 @@ def test_login_and_logout_forms_require_csrf_and_same_origin(client, admin_clien
         token = state[auth.CSRF_KEY]
     assert client.post('/admin/login', data={'email': 'admin@example.test', 'password': 'test-admin-password', 'csrf_token': token},
                        headers={'Origin': 'https://other.example'}).status_code == 400
+    opaque_origin = client.post('/admin/login', data={'csrf_token': token},
+                                headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert opaque_origin.status_code == 400
+    assert b'Your sign-in form expired.' not in opaque_origin.data
+    stale_opaque_origin = client.post('/admin/login', data={'csrf_token': 'stale-token'},
+                                      headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert b'Your sign-in form expired.' in stale_opaque_origin.data
+    cross_site_opaque_origin = client.post('/admin/login', data={'csrf_token': token},
+                                           headers={'Origin': 'null', 'Sec-Fetch-Site': 'cross-site'})
+    assert b'Your sign-in form expired.' in cross_site_opaque_origin.data
     assert client.post('/admin/logout').status_code == 400
     assert len(isolated_auth.calls) == before
     assert admin_client.get('/admin/logout').status_code == 405

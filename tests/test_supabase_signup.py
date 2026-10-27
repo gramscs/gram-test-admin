@@ -103,6 +103,15 @@ def test_registration_csrf_and_origin(client, isolated_auth):
     client.get('/admin/signup')
     with client.session_transaction() as state:
         token = state[auth.CSRF_KEY]
+    same_origin_opaque = client.post('/admin/signup', data={'csrf_token': token},
+                                     headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert b'Your registration form expired.' not in same_origin_opaque.data
+    stale_opaque = client.post('/admin/signup', data={'csrf_token': 'stale-token'},
+                               headers={'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'})
+    assert b'Your registration form expired.' in stale_opaque.data
+    cross_site_opaque = client.post('/admin/signup', data={'csrf_token': token},
+                                    headers={'Origin': 'null', 'Sec-Fetch-Site': 'cross-site'})
+    assert b'Your registration form expired.' in cross_site_opaque.data
     response = client.post('/admin/signup', data={'csrf_token': token}, headers={'Origin': 'https://other.example'})
     assert response.status_code == 400
     assert isolated_auth.calls == []

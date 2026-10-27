@@ -71,14 +71,19 @@ def csrf_token():
 
 def same_origin():
     origin = request.headers.get('Origin')
-    return (request.headers.get('Sec-Fetch-Site') != 'cross-site'
-            and (not origin or urlsplit(origin).netloc == request.host))
+    site = request.headers.get('Sec-Fetch-Site')
+    if site == 'cross-site':
+        return False
+    if origin == 'null':
+        return site == 'same-origin'
+    return not origin or urlsplit(origin).netloc == request.host
 
 
 def valid_auth_form():
     expected, supplied = session.get(CSRF_KEY), request.form.get('csrf_token')
-    return (same_origin() and isinstance(expected, str) and isinstance(supplied, str)
-            and hmac.compare_digest(expected.encode('utf-8'), supplied.encode('utf-8')))
+    token_valid = (isinstance(expected, str) and isinstance(supplied, str)
+                   and hmac.compare_digest(expected.encode('utf-8'), supplied.encode('utf-8')))
+    return same_origin() and token_valid
 
 
 def _forget(row=None):
