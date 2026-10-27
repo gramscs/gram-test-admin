@@ -17,7 +17,7 @@
       </div>
       {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
       {% if submitted %}
-      <div class="alert alert-success" role="status">Registration submitted. Check your email if confirmation is required, then sign in. If you already have an account, sign in with your existing password.</div>
+      <div class="alert alert-success" role="status">Registration submitted. Check your email and open the confirmation link in this browser to finish signing in. If you already have an account, sign in with your existing password.</div>
       {% else %}
       <form method="POST" action="{{ url_for('admin.signup') }}">
         <input type="hidden" name="csrf_token" value="{{ auth_csrf_token() }}" />

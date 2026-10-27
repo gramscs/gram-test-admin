@@ -211,6 +211,43 @@ def test_missing_public_key_does_not_fall_back_to_storage_key(app, client):
     assert response.status_code == 503 and b'SUPABASE_ANON_KEY' in response.data
 
 
+def test_rejected_public_key_is_configuration_error_not_bad_password(client, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(requests, 'request', lambda *a, **k: SimpleNamespace(
+        status_code=401, json=lambda: {'message': 'private-provider-details'}))
+    response = sign_in(client)
+    assert response.status_code == 503 and b'SUPABASE_ANON_KEY' in response.data
+    assert b'private-provider-details' not in response.data
+
+
+def test_provider_rate_limit_preserves_email_and_does_not_create_session(app, client, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(requests, 'request', lambda *a, **k: SimpleNamespace(status_code=429))
+    response = sign_in(client)
+    assert response.status_code == 429 and b'wait a few minutes' in response.data
+    assert b'value="admin@example.test"' in response.data
+    assert b'test-admin-password' not in response.data
+    assert response.headers['Cache-Control'] == 'no-store'
+    with app.app_context():
+        assert db.session.query(AuthSession).count() == 0
+
+
+def test_rate_limited_identity_check_preserves_the_existing_session(app, admin_client, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(requests, 'request', lambda *a, **k: SimpleNamespace(status_code=429))
+    response = admin_client.get('/admin/consignments/list', headers=API)
+    assert response.status_code == 429
+    with app.app_context():
+        assert db.session.query(AuthSession).count() == 1
+
+
+def test_non_ascii_csrf_token_is_rejected_without_server_error(client, isolated_auth):
+    client.get('/admin/login')
+    response = client.post('/admin/login', data={'csrf_token': '\u2603', 'email': 'admin@example.test', 'password': 'private'})
+    assert response.status_code == 400
+    assert isolated_auth.calls == []
+
+
 @pytest.mark.parametrize('key', ['sb_secret_test-key', 'service_role_jwt'])
 def test_privileged_storage_keys_are_not_accepted_for_user_signin(app, client, isolated_auth, key):
     import jwt

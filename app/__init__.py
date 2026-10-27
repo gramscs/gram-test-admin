@@ -63,6 +63,7 @@ def create_app(test_config=None):
         SECRET_KEY=secret_key,
         SUPABASE_URL=os.getenv('SUPABASE_URL', '').strip().rstrip('/'),
         SUPABASE_ANON_KEY=os.getenv('SUPABASE_ANON_KEY', '').strip(),
+        SUPABASE_AUTH_REDIRECT_URL=os.getenv('SUPABASE_AUTH_REDIRECT_URL', '').strip(),
         SQLALCHEMY_DATABASE_URI=url.render_as_string(hide_password=False),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         SESSION_COOKIE_HTTPONLY=True,
