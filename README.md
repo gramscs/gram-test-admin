@@ -96,6 +96,11 @@ database. Pulling the project does not execute the migration automatically.
 The measurement fields are named `weight` and `volume` in the application and
 database. No compatibility aliases for the previous column names are supported.
 
+## Backend cleanup
+
+The [backend cleanup baseline](docs/backend-cleanup/README.md) records the starting
+version, current module responsibilities, and existing test results before refactoring.
+
 ## Shared label details
 
 In shipment Add/Edit, **Box contents →** lets you choose boxes or pallets and
